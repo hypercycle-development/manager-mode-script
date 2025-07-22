@@ -95,7 +95,7 @@ def sign_message(private_key: str, message: str) -> str:
     encoded_msg = encode_defunct(text=message)
     signed = Account.sign_message(encoded_msg, private_key)
 
-    return signed.signature.hex()
+    return "0x" + signed.signature.hex()
 
 
 def determine_valid_data(
@@ -262,7 +262,6 @@ async def main():
             return
 
         print("🔍 Validating data...")
-        print(json.dumps(validated_data, indent=2))
 
         # Message to sign
         message_to_sign = await get_message(
@@ -274,7 +273,7 @@ async def main():
             session,
         )
 
-        print(f"📝 Signing message... -> {message_to_sign}")
+        print(f"📝 Signing message...")
 
     if not message_to_sign:
         print("❌ Failed to fetch the message to sign.")
@@ -282,7 +281,8 @@ async def main():
 
     # Sign message
     signed_data = sign_message(args.private_key, message_to_sign)
-    print(f"✅ Signed message:\n{json.dumps(signed_data, indent=2)}")
+    print(f"📝 Message signed successfully.")
+    # print(f"✅ Message signed successfully.")
 
 
 if __name__ == "__main__":
