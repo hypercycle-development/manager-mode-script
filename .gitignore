@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+*.env
+
+# Private keys/credentials
+*.key
+*.pem
+*.secret
