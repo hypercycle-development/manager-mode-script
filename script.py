@@ -125,6 +125,9 @@ async def main():
 
     # Security warning
     print("⚠️ WARNING: Never expose private keys in production environments!")
+    
+    if not args.private_key.startswith('0x'):
+        args.private_key = '0x' + args.private_key
 
     # Use networks based on flag
     networks = SUBGRAPHS["testnet"] if args.testnet else SUBGRAPHS["mainnet"]
