@@ -2,9 +2,11 @@
 import argparse
 import asyncio
 import json
+import sys
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from aiohttp import ClientSession, ClientError
+from urllib.parse import urlparse
 from typing import Optional, List, Dict, Any, Tuple
 
 
@@ -140,6 +142,53 @@ def determine_valid_data(
     return None, None
 
 
+async def fetch_node_info(session: ClientSession, node_url: str) -> Optional[Dict]:
+    """Fetch node info from /info endpoint"""
+    try:
+        async with session.get(f"{node_url.rstrip('/')}/info") as resp:
+            resp.raise_for_status()
+            return await resp.json()
+    except ClientError as e:
+        print(f"❌ Failed to fetch node info: {e}", file=sys.stderr)
+        return None
+
+
+def normalize_node_url(url: str) -> str:
+    """Ensure URL has http/https protocol, default to http if missing"""
+    # Check if the URL already has a scheme
+    if "://" not in url:
+        print(f"⚠️ No protocol specified, defaulting to http:// for {url}")
+        # Check if the URL starts with localhost or has a port number
+        if url.startswith("localhost") or ":" in url.split("/")[0]:
+            return f"http://{url}"
+        return f"http://{url}"
+    return url
+
+
+async def validate_node(args: ScriptArgs, session: ClientSession) -> bool:
+    """Validate node info matches expected network and freelancing is active"""
+    node_info = await fetch_node_info(session, args.node_url)
+    if not node_info:
+        return False
+
+    expected_network = "testnet" if args.testnet else "mainnet"
+
+    # Network validation
+    if node_info.get("network") != expected_network:
+        print(
+            f"❌ Node network mismatch. Expected {expected_network}, got {node_info.get('network')}",
+            file=sys.stderr,
+        )
+        return False
+
+    # Freelancing check
+    if not node_info.get("license_freelancing_active", False):
+        print("❌ License freelancing is not active on this node", file=sys.stderr)
+        return False
+
+    return True
+
+
 async def main():
     parser = argparse.ArgumentParser(
         description="Node Interactor - Manager Mode",
@@ -169,14 +218,19 @@ async def main():
     if not args.private_key.startswith("0x"):
         args.private_key = "0x" + args.private_key
 
+    args.node_url = normalize_node_url(args.node_url)
+
     # Use networks based on flag
     networks = SUBGRAPHS["testnet"] if args.testnet else SUBGRAPHS["mainnet"]
     print(f"🌐 Using {'testnet' if args.testnet else 'mainnet'}")
 
     async with ClientSession() as session:
+        if not await validate_node(args, session):
+            sys.exit(1)
+
         results = await fetch_all_networks(session, networks, args.license_anfe)
         validated_data = determine_valid_data(results, networks)
-        
+
     if not validated_data[0] or not validated_data[1]:
         print("❌ No valid data found for the provided ANFE or License.")
         return
