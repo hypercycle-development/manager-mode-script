@@ -324,7 +324,7 @@ async def main():
 
         if submit_result:
             print(
-                f"✅ License submitted successfully! Response: {json.dumps(submit_result, indent=2)}"
+                f"✅ License submitted successfully! Response: {submit_result['result']}"
             )
         else:
             print("❌ Failed to submit license", file=sys.stderr)
