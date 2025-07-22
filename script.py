@@ -81,13 +81,13 @@ async def fetch_all_networks(
     tasks = []
 
     for chain_name, url in networks.items():
-        print(f"🔍 Querying {chain_name}...")
+        print(f"🔍 Querying data from {chain_name}...")
         tasks.append(query_subgraph(session, url, query))
 
     return await asyncio.gather(*tasks)
 
 
-def sign_message(private_key: str, message: str) -> dict:
+def sign_message(private_key: str, message: str) -> str:
     """Secure message signing without Web3.py"""
     if not private_key.startswith("0x"):
         private_key = "0x" + private_key
@@ -95,11 +95,7 @@ def sign_message(private_key: str, message: str) -> dict:
     encoded_msg = encode_defunct(text=message)
     signed = Account.sign_message(encoded_msg, private_key)
 
-    return {
-        "message": message,
-        "signature": signed.signature.hex(),
-        "address": signed.address,
-    }
+    return signed.signature.hex()
 
 
 def determine_valid_data(
@@ -189,6 +185,27 @@ async def validate_node(args: ScriptArgs, session: ClientSession) -> bool:
     return True
 
 
+async def get_message(
+    token_id: str,
+    token_owner: str,
+    chypc_id: str,
+    chain: str,
+    node_url: str,
+    session: ClientSession,
+) -> str | None:
+    """Fetch the message from the node to sign"""
+    try:
+        async with session.get(
+            f"{node_url.rstrip('/')}/message/{token_id}/{token_owner}/{chypc_id}/{chain}"
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("result", None)
+    except ClientError as e:
+        print(f"{e}", file=sys.stderr)
+        return None
+
+
 async def main():
     parser = argparse.ArgumentParser(
         description="Node Interactor - Manager Mode",
@@ -231,16 +248,41 @@ async def main():
         results = await fetch_all_networks(session, networks, args.license_anfe)
         validated_data = determine_valid_data(results, networks)
 
-    if not validated_data[0] or not validated_data[1]:
-        print("❌ No valid data found for the provided ANFE or License.")
+        if not validated_data[0] or not validated_data[1]:
+            print("❌ No valid data found for the provided ANFE or License.")
+            return
+
+        if (
+            not validated_data[0]["has_required_backing"]
+            or len(validated_data[0]["backing_tokens"]) == 0
+        ):
+            print(
+                f"❌ The {validated_data[0]['type']} does not have the required cHyPC backing."
+            )
+            return
+
+        print("🔍 Validating data...")
+        print(json.dumps(validated_data, indent=2))
+
+        # Message to sign
+        message_to_sign = await get_message(
+            args.license_anfe,
+            validated_data[0]["owner"],
+            validated_data[0]["backing_tokens"][0],
+            validated_data[1],
+            args.node_url,
+            session,
+        )
+
+        print(f"📝 Signing message... -> {message_to_sign}")
+
+    if not message_to_sign:
+        print("❌ Failed to fetch the message to sign.")
         return
 
-    print("🔍 Validated data:")
-    print(json.dumps(validated_data, indent=2))
-
-    # # 1. Sign message
-    # signed_data = sign_message(args.private_key, args.message)
-    # print(f"✅ Signed message:\n{json.dumps(signed_data, indent=2)}")
+    # Sign message
+    signed_data = sign_message(args.private_key, message_to_sign)
+    print(f"✅ Signed message:\n{json.dumps(signed_data, indent=2)}")
 
 
 if __name__ == "__main__":
