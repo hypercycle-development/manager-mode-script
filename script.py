@@ -5,7 +5,7 @@ import json
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from aiohttp import ClientSession, ClientError
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 
 class ScriptArgs(argparse.Namespace):
@@ -100,6 +100,46 @@ def sign_message(private_key: str, message: str) -> dict:
     }
 
 
+def determine_valid_data(
+    results: list, networks: Dict
+) -> Tuple[Optional[Dict], Optional[str]]:
+    """
+    Determine whether to use ANFE or License data based on priority rules.
+    Returns (valid_data, chain_name) or (None, None)
+    """
+    # for chain_name, result in results:
+    for chain_name, result in zip(networks.keys(), results):
+        if not result or not result.get("data"):
+            continue
+
+        data = result["data"]
+
+        # Priority 1: Use ANFE if exists
+        if data["anfetokens"]:
+            anfe = data["anfetokens"][0]
+            return {
+                "type": "ANFE",
+                "owner": anfe["owner"]["id"],
+                "delegated_signer": anfe["delegatedSigner"],
+                "has_required_backing": anfe["license"]["hasRequiredBacking"],
+                "backing_tokens": [
+                    t["tokenId"] for t in anfe["license"]["chypcTokensBacking"]
+                ],
+            }, chain_name
+
+        # Priority 2: Use License if exists
+        if data["licenseToken"]:
+            license = data["licenseToken"]
+            return {
+                "type": "LICENSE",
+                "owner": license["owner"]["id"],
+                "has_required_backing": license["hasRequiredBacking"],
+                "backing_tokens": [t["tokenId"] for t in license["chypcTokensBacking"]],
+            }, chain_name
+
+    return None, None
+
+
 async def main():
     parser = argparse.ArgumentParser(
         description="Node Interactor - Manager Mode",
@@ -125,9 +165,9 @@ async def main():
 
     # Security warning
     print("⚠️ WARNING: Never expose private keys in production environments!")
-    
-    if not args.private_key.startswith('0x'):
-        args.private_key = '0x' + args.private_key
+
+    if not args.private_key.startswith("0x"):
+        args.private_key = "0x" + args.private_key
 
     # Use networks based on flag
     networks = SUBGRAPHS["testnet"] if args.testnet else SUBGRAPHS["mainnet"]
@@ -135,9 +175,14 @@ async def main():
 
     async with ClientSession() as session:
         results = await fetch_all_networks(session, networks, args.license_anfe)
+        validated_data = determine_valid_data(results, networks)
+        
+    if not validated_data[0] or not validated_data[1]:
+        print("❌ No valid data found for the provided ANFE or License.")
+        return
 
-        print("🔍 Query results:")
-        print(json.dumps(results, indent=2))
+    print("🔍 Validated data:")
+    print(json.dumps(validated_data, indent=2))
 
     # # 1. Sign message
     # signed_data = sign_message(args.private_key, args.message)
