@@ -5,8 +5,8 @@ import json
 import sys
 from eth_account import Account
 from eth_account.messages import encode_defunct
+from eth_utils.address import to_checksum_address
 from aiohttp import ClientSession, ClientError
-from urllib.parse import urlparse
 from typing import Optional, List, Dict, Any, Tuple
 
 
@@ -117,8 +117,8 @@ def determine_valid_data(
             anfe = data["anfetokens"][0]
             return {
                 "type": "ANFE",
-                "owner": anfe["owner"]["id"],
-                "delegated_signer": anfe["delegatedSigner"],
+                "owner": to_checksum_address(anfe["owner"]["id"]),
+                "delegated_signer": to_checksum_address(anfe["delegatedSigner"]),
                 "has_required_backing": anfe["license"]["hasRequiredBacking"],
                 "backing_tokens": [
                     t["tokenId"] for t in anfe["license"]["chypcTokensBacking"]
@@ -130,7 +130,7 @@ def determine_valid_data(
             license = data["licenseToken"]
             return {
                 "type": "LICENSE",
-                "owner": license["owner"]["id"],
+                "owner": to_checksum_address(license["owner"]["id"]),
                 "has_required_backing": license["hasRequiredBacking"],
                 "backing_tokens": [t["tokenId"] for t in license["chypcTokensBacking"]],
             }, chain_name
@@ -186,12 +186,12 @@ async def validate_node(args: ScriptArgs, session: ClientSession) -> bool:
 
 
 async def get_message(
+    session: ClientSession,
+    node_url: str,
     token_id: str,
     token_owner: str,
     chypc_id: str,
     chain: str,
-    node_url: str,
-    session: ClientSession,
 ) -> str | None:
     """Fetch the message from the node to sign"""
     try:
@@ -203,6 +203,32 @@ async def get_message(
             return data.get("result", None)
     except ClientError as e:
         print(f"{e}", file=sys.stderr)
+        return None
+
+
+async def submit_license(
+    session: ClientSession,
+    node_url: str,
+    message: str,
+    signature: str,
+    signer: str,
+    token_owner: str,
+) -> Optional[Dict]:
+    """Submit signed license data to the node"""
+    payload = {
+        "address": token_owner,
+        "message": message,
+        "signature": {"signature": signature, "key": signer},
+    }
+
+    try:
+        async with session.post(
+            f"{node_url.rstrip('/')}/submit_license", json=payload
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+    except ClientError as e:
+        print(f"❌ Failed to submit license: {e}", file=sys.stderr)
         return None
 
 
@@ -250,7 +276,7 @@ async def main():
 
         if not validated_data[0] or not validated_data[1]:
             print("❌ No valid data found for the provided ANFE or License.")
-            return
+            sys.exit(1)
 
         if (
             not validated_data[0]["has_required_backing"]
@@ -259,29 +285,51 @@ async def main():
             print(
                 f"❌ The {validated_data[0]['type']} does not have the required cHyPC backing."
             )
-            return
+            sys.exit(1)
 
         print("🔍 Validating data...")
 
         # Message to sign
         message_to_sign = await get_message(
+            session,
+            args.node_url,
             args.license_anfe,
             validated_data[0]["owner"],
             validated_data[0]["backing_tokens"][0],
             validated_data[1],
-            args.node_url,
-            session,
         )
 
         print(f"📝 Signing message...")
 
-    if not message_to_sign:
-        print("❌ Failed to fetch the message to sign.")
-        return
+        if not message_to_sign:
+            print("❌ Failed to fetch the message to sign.")
+            sys.exit(1)
 
-    # Sign message
-    signed_data = sign_message(args.private_key, message_to_sign)
-    print(f"📝 Message signed successfully.")
+        # Sign message
+        siganture = sign_message(args.private_key, message_to_sign)
+        print(f"📝 Message signed successfully.")
+
+        # Get signer address from private key
+        signer_address = Account.from_key(args.private_key).address
+
+        # Send data to the node
+        submit_result = await submit_license(
+            session,
+            args.node_url,
+            message_to_sign,
+            siganture,
+            signer_address,
+            validated_data[0]["owner"],
+        )
+
+        if submit_result:
+            print(
+                f"✅ License submitted successfully! Response: {json.dumps(submit_result, indent=2)}"
+            )
+        else:
+            print("❌ Failed to submit license", file=sys.stderr)
+            sys.exit(1)
+
     # print(f"✅ Message signed successfully.")
 
 
