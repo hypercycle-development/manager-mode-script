@@ -10,9 +10,7 @@ The **Hypercycle Manager Mode** is designed to enhance interaction and utilizati
 This model fosters greater ecosystem activity by facilitating collaboration between hardware and license owners:
 
 - If a user owns a **Hypercycle Node (hardware)** but lacks a license, they can obtain one from another party.
-
 - If a user has a **License (or ANFE)** but lacks the hardware to run a node, they can assign it to someone else's node.
-
 - Additionally, license owners who prefer not to manage node assignments can delegate control to a trusted user.
 
 ## Purpose of This Script
@@ -124,7 +122,5 @@ python script.py \
 ### Notes
 
 - Ensure the provided **private key** has permissions to manage the License/ANFE.
-
 - The **node URL** must be accessible and correctly configured.
-
 - Use `--testnet` only for testnet environments; omit for mainnet.
