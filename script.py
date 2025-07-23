@@ -238,18 +238,20 @@ async def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--license-anfe", required=True, help="License or ANFE to assign"
+        "--license-anfe", required=True, help="License or ANFE to assign."
     )
     parser.add_argument(
-        "--node-url", required=True, help="Hypercycle node HTTP endpoint"
+        "--node-url", required=True, help="Hypercycle Node's HTTP endpoint."
     )
     parser.add_argument(
-        "--private-key", required=True, help="0x-prefixed hex private key"
+        "--private-key",
+        required=True,
+        help="0x-prefixed hex private key of the license owner or delegated account.",
     )
     parser.add_argument(
         "--testnet",
         action="store_true",
-        help="Use testnet subgraphs",
+        help="Flag to indicate testnet usage (omit for mainnet).",
     )
 
     # FIXME: Improve the type hinting
