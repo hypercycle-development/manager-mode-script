@@ -1,6 +1,23 @@
 # Manager mode script - Freelancing node
 
-WIP: Describe the script goal
+## Overview
+
+The **Hypercycle Manager Mode** is designed to enhance interaction and utilization within the **Hypercycle ecosystem**. It enables two key functionalities:
+
+1. **License Delegation** - A license owner can delegate usage rights to a third party.
+2. **Node Assignment** - A Hypercycle Node owner can allow another user to assign their license to the node.
+
+This model fosters greater ecosystem activity by facilitating collaboration between hardware and license owners:
+
+- If a user owns a **Hypercycle Node (hardware)** but lacks a license, they can obtain one from another party.
+
+- If a user has a **License (or ANFE)** but lacks the hardware to run a node, they can assign it to someone else’s node.
+
+- Additionally, license owners who prefer not to manage node assignments can delegate control to a trusted user.
+
+## Purpose of This Script
+
+This script simplifies the process of assigning a **License/ANFE** to a known **Hypercycle Node**, streamlining management for both node and license owners.
 
 ## Installation
 
@@ -69,3 +86,45 @@ pip install -r requirements.txt
 After completing these steps, the environment is ready to run the script
 
 ---
+
+## Usage
+
+This script facilitates the assignment of a **License/ANFE** to a **Hypercycle Node** in Manager Mode.
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--license-anfe` | **Yes** | License or ANFE to assign. |
+| `--node-url` | **Yes** | Hypercycle Node's HTTP endpoint. |
+| `--private-key` | **Yes** | `0x`-prefixed hex private key of the license owner or delegated account. |
+| `--testnet` | No | Flag to indicate testnet usage (omit for mainnet). |
+
+### Examples
+
+#### 1. Assigning a License to a Mainnet Node
+
+```sh
+python script.py \
+    --license-anfe 4649559795958260 \
+    --node-url http://hypercycle-node.example:8080 \
+    --private-key 0x1a2b3c...privatekey
+```
+
+#### 2. Assigning a License to a Testnet Node
+
+```sh
+python script.py \
+    --license-anfe 1125968626330429 \
+    --node-url http://testnet-node.example:8080 \
+    --private-key 0x4d5e6f...privatekey \
+    --testnet
+```
+
+### Notes
+
+- Ensure the provided **private key** has permissions to manage the License/ANFE.
+
+- The **node URL** must be accessible and correctly configured.
+
+- Use `--testnet` only for testnet environments; omit for mainnet.
