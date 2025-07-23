@@ -11,7 +11,7 @@ This model fosters greater ecosystem activity by facilitating collaboration betw
 
 - If a user owns a **Hypercycle Node (hardware)** but lacks a license, they can obtain one from another party.
 
-- If a user has a **License (or ANFE)** but lacks the hardware to run a node, they can assign it to someone else’s node.
+- If a user has a **License (or ANFE)** but lacks the hardware to run a node, they can assign it to someone else's node.
 
 - Additionally, license owners who prefer not to manage node assignments can delegate control to a trusted user.
 
@@ -59,7 +59,7 @@ To ensure you are using the correct virtual environment, run the following comma
 which python
 ```
 
-The output should point to this project’s virtual environment, for example:
+The output should point to this project's virtual environment, for example:
 
 ```bash
 /home/user/projects/manager-mode-script/.venv/bin/python
