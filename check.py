@@ -25,7 +25,8 @@ class AddressClassifier:
         self.license_status: Dict[str, str] = {}  # Merklizer status for all licenses
         self.address_categories: Dict[str, Set[str]] = {
             "valid_active": set(),      # All licenses alive
-            "compensation_needed": set() # Any license dead/unknown or discrepancies
+            "needs_compensation": set(), # Any license dead
+            "warning": set()            # Only alive + unknown licenses
         }
 
     def read_tranche_addresses(self, filename: str) -> None:
@@ -143,29 +144,41 @@ class AddressClassifier:
             self.license_status[license_id] = "error"
 
     def perform_final_classification(self) -> None:
-        """Classify addresses based on ALL licenses from subgraph and their status"""
+        """Classify addresses based on license statuses"""
         for address in self.tranche_addresses:
             subgraph_licenses = self.subgraph_licenses.get(address, set())
             tracked_licenses = self.tracked_licenses.get(address, set())
             
-            # Check if any license is dead/unknown
-            has_bad_license = False
+            # Check license statuses
+            has_dead = False
+            has_unknown = False
+            has_alive = False
+            
             for license_id in subgraph_licenses:
                 status = self.license_status.get(license_id, "unknown")
-                if status != "alive":
-                    has_bad_license = True
-                    break
+                if status == "dead":
+                    has_dead = True
+                elif status == "unknown":
+                    has_unknown = True
+                elif status == "alive":
+                    has_alive = True
             
             # Classification rules:
-            # 1. If no licenses at all -> compensation
-            # 2. If any license is dead/unknown -> compensation
-            # 3. If our tracked licenses don't match subgraph -> compensation
-            # 4. Only valid if all licenses are alive and our tracking matches subgraph
-            if (not subgraph_licenses or 
-                has_bad_license or
-                not tracked_licenses.issubset(subgraph_licenses)):
-                self.address_categories["compensation_needed"].add(address)
+            if not subgraph_licenses:
+                # No licenses at all - compensate
+                self.address_categories["needs_compensation"].add(address)
+            elif has_dead:
+                # Any dead license - compensate
+                self.address_categories["needs_compensation"].add(address)
+            elif has_unknown and not has_alive:
+                # Only unknown licenses - compensate
+                self.address_categories["needs_compensation"].add(address)
+            elif has_unknown:
+                # Mix of alive and unknown - warning
+                self.address_categories["warning"].add(address)
+                self.address_categories["valid_active"].add(address)  # Still consider valid
             else:
+                # All licenses alive
                 self.address_categories["valid_active"].add(address)
 
     def generate_report(self) -> Dict[str, Any]:
@@ -174,27 +187,37 @@ class AddressClassifier:
             "summary": {
                 "total_addresses": len(self.tranche_addresses),
                 "valid_active": len(self.address_categories["valid_active"]),
-                "compensation_needed": len(self.address_categories["compensation_needed"]),
+                "needs_compensation": len(self.address_categories["needs_compensation"]),
+                "warning": len(self.address_categories["warning"]),
             },
             "details": {
                 "valid_active": sorted(self.address_categories["valid_active"]),
-                "compensation_needed": sorted(self.address_categories["compensation_needed"]),
+                "needs_compensation": sorted(self.address_categories["needs_compensation"]),
+                "warning": sorted(self.address_categories["warning"]),
             },
             "verification_details": {}
         }
         
         # Add detailed verification info for each address
         for address in self.tranche_addresses:
-            report["verification_details"][address] = {
+            verification_data = {
                 "tracked_licenses": sorted(self.tracked_licenses.get(address, [])),
                 "subgraph_licenses": sorted(self.subgraph_licenses.get(address, [])),
                 "license_statuses": {
                     lid: self.license_status.get(lid, "unknown")
                     for lid in self.subgraph_licenses.get(address, [])
-                },
-                "classification": ("valid_active" if address in self.address_categories["valid_active"]
-                                 else "compensation_needed")
+                }
             }
+            
+            # Determine classification
+            if address in self.address_categories["needs_compensation"]:
+                verification_data["classification"] = "needs_compensation"
+            elif address in self.address_categories["warning"]:
+                verification_data["classification"] = "warning (alive + unknown)"
+            else:
+                verification_data["classification"] = "valid_active"
+            
+            report["verification_details"][address] = verification_data
         
         return report
 
