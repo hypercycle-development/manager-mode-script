@@ -2,9 +2,10 @@ import asyncio
 import os
 import json
 from aiohttp import ClientSession, ClientError
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Set, Tuple, Any
 
-# Subgraph endpoints
+# Configuration
+MERKLIZER_URL = "http://18.216.251.149:8003"
 SUBGRAPHS = {
     "mainnet": {
         "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum/v0.7.26",
@@ -16,162 +17,228 @@ SUBGRAPHS = {
     },
 }
 
+class AddressClassifier:
+    def __init__(self):
+        self.tranche_addresses: Set[str] = set()
+        self.activity_data: Dict[str, Set[str]] = {}
+        self.active_addresses: Dict[str, Set[str]] = {}
+        self.inactive_addresses: Set[str] = set()
+        self.subgraph_verified: Dict[str, Set[str]] = {}
+        self.merklizer_status: Dict[str, str] = {}
+        self.address_categories: Dict[str, Set[str]] = {
+            "valid_active": set(),
+            "invalid_active": set(),
+            "compensation_needed": set()
+        }
 
-async def query_subgraph(
-    session: ClientSession, url: str, query: str
-) -> Optional[Dict]:
-    """Execute GraphQL query against subgraph"""
-    payload = {"query": query}
-    try:
-        async with session.post(url, json=payload) as resp:
-            resp.raise_for_status()
-            return await resp.json()
-    except ClientError as e:
-        print(f"⚠️ Subgraph query failed: {e}")
-        return None
+    def read_tranche_addresses(self, filename: str) -> None:
+        """Read addresses from tranche file"""
+        with open(filename, 'r') as file:
+            self.tranche_addresses = {
+                line.strip() for line in file 
+                if line.strip() and not line.startswith('#')
+            }
 
+    def read_hts_files(self, file_pattern: str, num_files: int = 6) -> None:
+        """Read all hts files and build activity data"""
+        self.activity_data = {}
+        
+        for i in range(1, num_files + 1):
+            filename = file_pattern.format(i)
+            if not os.path.exists(filename):
+                continue
+                
+            with open(filename, 'r') as file:
+                next(file, None)  # Skip header
+                
+                for line in file:
+                    if not line.strip():
+                        continue
+                        
+                    parts = line.strip().split()
+                    if len(parts) < 2:
+                        continue
+                        
+                    address, license_id = parts[0], parts[1]
+                    if address not in self.activity_data:
+                        self.activity_data[address] = set()
+                    self.activity_data[address].add(license_id)
 
-def build_query(account_address: str) -> str:
-    """Generate the GraphQL query for license/anfe data"""
-    return f"""
-    {{
-        shareProposalDatas(
-            first: 1000
-            orderBy: proposalId
-            where: {{ operator_contains: "{account_address}" }}
-        ) {{
-            proposalId
-            shareNumberId
-            chypcId
-            licenseId
-            rTokenId
-            wTokenId
-            operator
+    def classify_addresses(self) -> None:
+        """Initial classification based on hts files"""
+        for address in self.tranche_addresses:
+            if address in self.activity_data:
+                self.active_addresses[address] = self.activity_data[address]
+            else:
+                self.inactive_addresses.add(address)
+
+    async def verify_with_subgraph(self, session: ClientSession) -> None:
+        """Verify licenses with subgraph data"""
+        query_template = """
+        {{
+            shareProposalDatas(
+                first: 1000
+                orderBy: proposalId
+                where: {{ operator_contains: "{address}" }}
+            ) {{
+                licenseId
+            }}
         }}
-    }}
-    """
+        """
+        
+        tasks = []
+        for address in self.tranche_addresses:
+            query = query_template.format(address=address)
+            tasks.append(self._query_all_networks(session, query, address))
+        
+        results = await asyncio.gather(*tasks)
+        
+        for address, subgraph_licenses in results:
+            self.subgraph_verified[address] = subgraph_licenses
 
+    async def _query_all_networks(self, session: ClientSession, query: str, address: str) -> Tuple[str, Set[str]]:
+        """Query all networks for a single address"""
+        tasks = []
+        for url in SUBGRAPHS["mainnet"].values():
+            tasks.append(self._query_subgraph(session, url, query))
+        
+        results = await asyncio.gather(*tasks)
+        all_licenses = set()
+        
+        for result in results:
+            if result and "data" in result:
+                for item in result["data"].get("shareProposalDatas", []):
+                    if "licenseId" in item:
+                        all_licenses.add(item["licenseId"])
+        
+        return (address, all_licenses)
 
-async def fetch_all_networks(
-    session: ClientSession, networks: Dict[str, str], account_address: str
-) -> List[Dict[str, Any]]:
-    """Query multiple networks in parallel"""
-    query = build_query(account_address)
-    tasks = []
+    async def _query_subgraph(self, session: ClientSession, url: str, query: str) -> Optional[Dict]:
+        """Execute GraphQL query against subgraph"""
+        payload = {"query": query}
+        try:
+            async with session.post(url, json=payload) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        except ClientError as e:
+            print(f"⚠️ Subgraph query failed: {e}")
+            return None
 
-    for chain_name, url in networks.items():
-        print(f"🔍 Querying data from {chain_name}...")
-        tasks.append(query_subgraph(session, url, query))
+    async def check_merklizer_status(self, session: ClientSession) -> None:
+        """Check license status with merklizer"""
+        all_licenses = set()
+        for licenses in self.activity_data.values():
+            all_licenses.update(licenses)
+        
+        tasks = []
+        for license_id in all_licenses:
+            tasks.append(self._check_single_license(session, license_id))
+        
+        await asyncio.gather(*tasks)
 
-    return await asyncio.gather(*tasks)
+    async def _check_single_license(self, session: ClientSession, license_id: str) -> None:
+        """Check status of a single license"""
+        url = f"{MERKLIZER_URL}/license_status?license={license_id}"
+        try:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.merklizer_status[license_id] = data.get("status", "unknown")
+                else:
+                    self.merklizer_status[license_id] = "error"
+        except ClientError:
+            self.merklizer_status[license_id] = "error"
 
-# http
-merklizer_url = "18.216.251.149:8003"
+    def perform_final_classification(self) -> None:
+        """Perform final classification based on all checks"""
+        for address in self.tranche_addresses:
+            # Get all licenses we found for this address
+            our_licenses = self.activity_data.get(address, set())
+            
+            # Get licenses from subgraph
+            subgraph_licenses = self.subgraph_verified.get(address, set())
+            
+            # Check merklizer status for our licenses
+            valid_licenses = set()
+            invalid_licenses = set()
+            
+            for license_id in our_licenses:
+                status = self.merklizer_status.get(license_id, "unknown")
+                if status == "alive":
+                    valid_licenses.add(license_id)
+                else:
+                    invalid_licenses.add(license_id)
+            
+            # Classification logic
+            if not our_licenses and not subgraph_licenses:
+                # No licenses found anywhere - compensation needed
+                self.address_categories["compensation_needed"].add(address)
+            elif our_licenses and subgraph_licenses and our_licenses.issubset(subgraph_licenses):
+                # All our licenses are verified in subgraph
+                if all(self.merklizer_status.get(lid, "") == "alive" for lid in our_licenses):
+                    self.address_categories["valid_active"].add(address)
+                else:
+                    self.address_categories["invalid_active"].add(address)
+            else:
+                # Discrepancy between our data and subgraph
+                self.address_categories["compensation_needed"].add(address)
 
-share_token_v2 = "0x4BFbA79CF232361a53eDdd17C67C6c77A6F00379"
-share_manager_v2 = "0xc5d5B9F30AA674aA210a0ec24941bAd7D8b42069"
-share_manager_legacy = "0x5A3591001DfB63FAc81d2976C150BB38df2cd71C"
-
-
-def read_tranche_addresses(filename):
-    """Read addresses from tranche file, ignoring comments and empty lines"""
-    with open(filename, "r") as file:
-        addresses = [
-            line.strip() for line in file if line.strip() and not line.startswith("#")
-        ]
-    return set(addresses)  # Using set for faster lookups
-
-
-def read_hts_files(file_pattern, num_files=6):
-    """Read all hts files and return a dictionary of address to license IDs"""
-    activity_data = {}  # {address: set(license_ids)}
-
-    for i in range(1, num_files + 1):
-        filename = file_pattern.format(i)
-        if not os.path.exists(filename):
-            continue
-
-        with open(filename, "r") as file:
-            # Skip header line
-            next(file, None)
-
-            for line in file:
-                if not line.strip():
-                    continue
-
-                parts = line.strip().split()
-                if len(parts) < 2:
-                    continue
-
-                address = parts[0]
-                license_id = parts[1]
-
-                if address not in activity_data:
-                    activity_data[address] = set()
-                activity_data[address].add(license_id)
-
-    return activity_data
-
-
-def classify_addresses(tranche_addresses, activity_data):
-    """Classify addresses into different categories"""
-    active_addresses = {}
-    inactive_addresses = set()
-
-    for address in tranche_addresses:
-        if address in activity_data:
-            active_addresses[address] = activity_data[address]
-        else:
-            inactive_addresses.add(address)
-
-    return active_addresses, inactive_addresses
-
+    def generate_report(self) -> Dict[str, Any]:
+        """Generate a comprehensive report"""
+        report = {
+            "summary": {
+                "total_addresses": len(self.tranche_addresses),
+                "valid_active": len(self.address_categories["valid_active"]),
+                "invalid_active": len(self.address_categories["invalid_active"]),
+                "compensation_needed": len(self.address_categories["compensation_needed"]),
+            },
+            "details": {
+                "valid_active": sorted(self.address_categories["valid_active"]),
+                "invalid_active": sorted(self.address_categories["invalid_active"]),
+                "compensation_needed": sorted(self.address_categories["compensation_needed"]),
+            }
+        }
+        
+        # Add license status details
+        report["license_status"] = {}
+        for address in self.active_addresses:
+            report["license_status"][address] = {
+                "our_licenses": sorted(self.activity_data.get(address, [])),
+                "subgraph_licenses": sorted(self.subgraph_verified.get(address, [])),
+                "merklizer_status": {
+                    lid: self.merklizer_status.get(lid, "unknown")
+                    for lid in self.activity_data.get(address, [])
+                }
+            }
+        
+        return report
 
 async def main():
-    networks = SUBGRAPHS["mainnet"]
-
-    # Read the tranche addresses
-    tranche_file = "data_tillers/tranche1_addresses.txt"
-    tranche_addresses = read_tranche_addresses(tranche_file)
-
-    # Read all hts files
-    activity_data = read_hts_files("data_tillers/merk_data/hts{}.txt")
-
-    # Classify the addresses
-    active_addresses, inactive_addresses = classify_addresses(
-        tranche_addresses, activity_data
-    )
-
+    classifier = AddressClassifier()
+    
+    # Load data files
+    classifier.read_tranche_addresses("data_tillers/tranche1_addresses.txt")
+    classifier.read_hts_files("data_tillers/merk_data/hts{}.txt")
+    classifier.classify_addresses()
+    
     async with ClientSession() as session:
-        # Fetch data for each address in the tranche
-        data = await fetch_all_networks(
-            session, networks, "0x1Eb5AF9DE17437552B526946116c0bDCFCAb60bC"
-        )
-        print(f"Fetched data from {(data)} networks.")
-
-    # results = await fetch_all_networks(session, networks, args.license_anfe)
-
-    # # Print results
-    # print("\n=== Addresses with activity ===")
-    # for address, licenses in active_addresses.items():
-    #     print(f"{address} - {len(licenses)} license(s): {', '.join(licenses)}")
-
-    # print("\n=== Addresses without activity ===")
-    # for address in inactive_addresses:
-    #     print(address)
-
-    # # Print summary statistics
-    # print("\n=== Summary ===")
-    # print(f"Total addresses in tranche: {len(tranche_addresses)}")
-    # print(f"activity_data: {len(activity_data)}")
-    # print(f"Addresses with activity: {len(active_addresses)}")
-    # print(f"{active_addresses}")
-    # print(f"-- Addresses without activity: {len(inactive_addresses)}")
-    # print(f"{inactive_addresses}")
-    # print(
-    #     f"Addresses with multiple licenses: {sum(1 for licenses in active_addresses.values() if len(licenses) > 1)}"
-    # )
-
+        # Verify with subgraph
+        print("Verifying licenses with subgraph...")
+        await classifier.verify_with_subgraph(session)
+        
+        # Check merklizer status
+        print("Checking license status with merklizer...")
+        await classifier.check_merklizer_status(session)
+    
+    # Perform final classification
+    classifier.perform_final_classification()
+    
+    # Generate and save report
+    report = classifier.generate_report()
+    with open("address_classification_report.json", "w") as f:
+        json.dump(report, f, indent=2)
+    
+    print("Classification complete. Report saved to address_classification_report.json")
 
 if __name__ == "__main__":
     asyncio.run(main())
