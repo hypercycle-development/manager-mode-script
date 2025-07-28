@@ -1,3 +1,4 @@
 aiohttp>=3.12.14
+web3>=7.12.1
 eth-account>=0.13.7
 python-dotenv>=1.0.0
