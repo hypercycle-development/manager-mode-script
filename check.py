@@ -20,15 +20,12 @@ SUBGRAPHS = {
 class AddressClassifier:
     def __init__(self):
         self.tranche_addresses: Set[str] = set()
-        self.activity_data: Dict[str, Set[str]] = {}
-        self.active_addresses: Dict[str, Set[str]] = {}
-        self.inactive_addresses: Set[str] = set()
-        self.subgraph_verified: Dict[str, Set[str]] = {}
-        self.merklizer_status: Dict[str, str] = {}
+        self.tracked_licenses: Dict[str, Set[str]] = {}  # Our tracked licenses
+        self.subgraph_licenses: Dict[str, Set[str]] = {}  # All licenses from subgraph
+        self.license_status: Dict[str, str] = {}  # Merklizer status for all licenses
         self.address_categories: Dict[str, Set[str]] = {
-            "valid_active": set(),
-            "invalid_active": set(),
-            "compensation_needed": set()
+            "valid_active": set(),      # All licenses alive
+            "compensation_needed": set() # Any license dead/unknown or discrepancies
         }
 
     def read_tranche_addresses(self, filename: str) -> None:
@@ -40,8 +37,8 @@ class AddressClassifier:
             }
 
     def read_hts_files(self, file_pattern: str, num_files: int = 6) -> None:
-        """Read all hts files and build activity data"""
-        self.activity_data = {}
+        """Read all hts files with our tracked licenses"""
+        self.tracked_licenses = {}
         
         for i in range(1, num_files + 1):
             filename = file_pattern.format(i)
@@ -60,20 +57,12 @@ class AddressClassifier:
                         continue
                         
                     address, license_id = parts[0], parts[1]
-                    if address not in self.activity_data:
-                        self.activity_data[address] = set()
-                    self.activity_data[address].add(license_id)
-
-    def classify_addresses(self) -> None:
-        """Initial classification based on hts files"""
-        for address in self.tranche_addresses:
-            if address in self.activity_data:
-                self.active_addresses[address] = self.activity_data[address]
-            else:
-                self.inactive_addresses.add(address)
+                    if address not in self.tracked_licenses:
+                        self.tracked_licenses[address] = set()
+                    self.tracked_licenses[address].add(license_id)
 
     async def verify_with_subgraph(self, session: ClientSession) -> None:
-        """Verify licenses with subgraph data"""
+        """Get ALL licenses for each address from subgraph"""
         query_template = """
         {{
             shareProposalDatas(
@@ -93,8 +82,8 @@ class AddressClassifier:
         
         results = await asyncio.gather(*tasks)
         
-        for address, subgraph_licenses in results:
-            self.subgraph_verified[address] = subgraph_licenses
+        for address, licenses in results:
+            self.subgraph_licenses[address] = licenses
 
     async def _query_all_networks(self, session: ClientSession, query: str, address: str) -> Tuple[str, Set[str]]:
         """Query all networks for a single address"""
@@ -125,9 +114,13 @@ class AddressClassifier:
             return None
 
     async def check_merklizer_status(self, session: ClientSession) -> None:
-        """Check license status with merklizer"""
+        """Check status of ALL licenses from subgraph (not just our tracked ones)"""
         all_licenses = set()
-        for licenses in self.activity_data.values():
+        for licenses in self.subgraph_licenses.values():
+            all_licenses.update(licenses)
+        
+        # Also include our tracked licenses in case they're not in subgraph
+        for licenses in self.tracked_licenses.values():
             all_licenses.update(licenses)
         
         tasks = []
@@ -143,72 +136,64 @@ class AddressClassifier:
             async with session.get(url) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    self.merklizer_status[license_id] = data.get("status", "unknown")
+                    self.license_status[license_id] = data.get("status", "unknown")
                 else:
-                    self.merklizer_status[license_id] = "error"
+                    self.license_status[license_id] = "error"
         except ClientError:
-            self.merklizer_status[license_id] = "error"
+            self.license_status[license_id] = "error"
 
     def perform_final_classification(self) -> None:
-        """Perform final classification based on all checks"""
+        """Classify addresses based on ALL licenses from subgraph and their status"""
         for address in self.tranche_addresses:
-            # Get all licenses we found for this address
-            our_licenses = self.activity_data.get(address, set())
+            subgraph_licenses = self.subgraph_licenses.get(address, set())
+            tracked_licenses = self.tracked_licenses.get(address, set())
             
-            # Get licenses from subgraph
-            subgraph_licenses = self.subgraph_verified.get(address, set())
+            # Check if any license is dead/unknown
+            has_bad_license = False
+            for license_id in subgraph_licenses:
+                status = self.license_status.get(license_id, "unknown")
+                if status != "alive":
+                    has_bad_license = True
+                    break
             
-            # Check merklizer status for our licenses
-            valid_licenses = set()
-            invalid_licenses = set()
-            
-            for license_id in our_licenses:
-                status = self.merklizer_status.get(license_id, "unknown")
-                if status == "alive":
-                    valid_licenses.add(license_id)
-                else:
-                    invalid_licenses.add(license_id)
-            
-            # Classification logic
-            if not our_licenses and not subgraph_licenses:
-                # No licenses found anywhere - compensation needed
+            # Classification rules:
+            # 1. If no licenses at all -> compensation
+            # 2. If any license is dead/unknown -> compensation
+            # 3. If our tracked licenses don't match subgraph -> compensation
+            # 4. Only valid if all licenses are alive and our tracking matches subgraph
+            if (not subgraph_licenses or 
+                has_bad_license or
+                not tracked_licenses.issubset(subgraph_licenses)):
                 self.address_categories["compensation_needed"].add(address)
-            elif our_licenses and subgraph_licenses and our_licenses.issubset(subgraph_licenses):
-                # All our licenses are verified in subgraph
-                if all(self.merklizer_status.get(lid, "") == "alive" for lid in our_licenses):
-                    self.address_categories["valid_active"].add(address)
-                else:
-                    self.address_categories["invalid_active"].add(address)
             else:
-                # Discrepancy between our data and subgraph
-                self.address_categories["compensation_needed"].add(address)
+                self.address_categories["valid_active"].add(address)
 
     def generate_report(self) -> Dict[str, Any]:
-        """Generate a comprehensive report"""
+        """Generate comprehensive report with all verification details"""
         report = {
             "summary": {
                 "total_addresses": len(self.tranche_addresses),
                 "valid_active": len(self.address_categories["valid_active"]),
-                "invalid_active": len(self.address_categories["invalid_active"]),
                 "compensation_needed": len(self.address_categories["compensation_needed"]),
             },
             "details": {
                 "valid_active": sorted(self.address_categories["valid_active"]),
-                "invalid_active": sorted(self.address_categories["invalid_active"]),
                 "compensation_needed": sorted(self.address_categories["compensation_needed"]),
-            }
+            },
+            "verification_details": {}
         }
         
-        # Add license status details
-        report["license_status"] = {}
-        for address in self.active_addresses:
-            report["license_status"][address] = {
-                "our_licenses": sorted(self.activity_data.get(address, [])),
-                "subgraph_licenses": sorted(self.subgraph_verified.get(address, [])),
-                "merklizer_status": {
-                    lid: self.merklizer_status.get(lid, "unknown")
-                    for lid in self.activity_data.get(address, [])
-                }
+        # Add detailed verification info for each address
+        for address in self.tranche_addresses:
+            report["verification_details"][address] = {
+                "tracked_licenses": sorted(self.tracked_licenses.get(address, [])),
+                "subgraph_licenses": sorted(self.subgraph_licenses.get(address, [])),
+                "license_statuses": {
+                    lid: self.license_status.get(lid, "unknown")
+                    for lid in self.subgraph_licenses.get(address, [])
+                },
+                "classification": ("valid_active" if address in self.address_categories["valid_active"]
+                                 else "compensation_needed")
             }
         
         return report
@@ -219,15 +204,14 @@ async def main():
     # Load data files
     classifier.read_tranche_addresses("data_tillers/tranche1_addresses.txt")
     classifier.read_hts_files("data_tillers/merk_data/hts{}.txt")
-    classifier.classify_addresses()
     
     async with ClientSession() as session:
-        # Verify with subgraph
-        print("Verifying licenses with subgraph...")
+        # Verify with subgraph (get ALL licenses)
+        print("Fetching all licenses from subgraph...")
         await classifier.verify_with_subgraph(session)
         
-        # Check merklizer status
-        print("Checking license status with merklizer...")
+        # Check merklizer status for all licenses
+        print("Checking license statuses with merklizer...")
         await classifier.check_merklizer_status(session)
     
     # Perform final classification
@@ -235,10 +219,10 @@ async def main():
     
     # Generate and save report
     report = classifier.generate_report()
-    with open("address_classification_report.json", "w") as f:
+    with open("address_verification_report.json", "w") as f:
         json.dump(report, f, indent=2)
     
-    print("Classification complete. Report saved to address_classification_report.json")
+    print("Verification complete. Report saved to address_verification_report.json")
 
 if __name__ == "__main__":
     asyncio.run(main())
