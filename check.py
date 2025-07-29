@@ -2,31 +2,19 @@ import asyncio
 import os
 import json
 from aiohttp import ClientSession, ClientError
-from typing import Optional, List, Dict, Set, Tuple, Any
+from typing import Dict, Set, List, Any
 
 # Configuration
 MERKLIZER_URL = "http://18.216.251.149:8003"
-SUBGRAPHS = {
-    "mainnet": {
-        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum/v0.7.26",
-        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base/v0.7.26",
-    },
-    "testnet": {
-        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum-sepolia/v0.7.26",
-        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base-sepolia/v0.7.26",
-    },
-}
 
-class AddressClassifier:
+class LicenseChecker:
     def __init__(self):
         self.tranche_addresses: Set[str] = set()
-        self.tracked_licenses: Dict[str, Set[str]] = {}  # Our tracked licenses
-        self.subgraph_licenses: Dict[str, Set[str]] = {}  # All licenses from subgraph
-        self.license_status: Dict[str, str] = {}  # Merklizer status for all licenses
+        self.tracked_licenses: Dict[str, Set[str]] = {}  # Address -> license IDs
+        self.license_status: Dict[str, str] = {}  # License ID -> status
         self.address_categories: Dict[str, Set[str]] = {
             "valid_active": set(),      # All licenses alive
-            "needs_compensation": set(), # Any license dead
-            "warning": set()            # Only alive + unknown licenses
+            "needs_compensation": set() # Any license dead/unknown or no licenses
         }
 
     def read_tranche_addresses(self, filename: str) -> None:
@@ -62,79 +50,27 @@ class AddressClassifier:
                         self.tracked_licenses[address] = set()
                     self.tracked_licenses[address].add(license_id)
 
-    async def verify_with_subgraph(self, session: ClientSession) -> None:
-        """Get ALL licenses for each address from subgraph"""
-        query_template = """
-        {{
-            shareProposalDatas(
-                first: 1000
-                orderBy: proposalId
-                where: {{ operator_contains: "{address}" }}
-            ) {{
-                licenseId
-            }}
-        }}
-        """
-        
-        tasks = []
-        for address in self.tranche_addresses:
-            query = query_template.format(address=address)
-            tasks.append(self._query_all_networks(session, query, address))
-        
-        results = await asyncio.gather(*tasks)
-        
-        for address, licenses in results:
-            self.subgraph_licenses[address] = licenses
-
-    async def _query_all_networks(self, session: ClientSession, query: str, address: str) -> Tuple[str, Set[str]]:
-        """Query all networks for a single address"""
-        tasks = []
-        for url in SUBGRAPHS["mainnet"].values():
-            tasks.append(self._query_subgraph(session, url, query))
-        
-        results = await asyncio.gather(*tasks)
+    async def check_license_statuses(self, session: ClientSession) -> None:
+        """Check status of all tracked licenses"""
         all_licenses = set()
-        
-        for result in results:
-            if result and "data" in result:
-                for item in result["data"].get("shareProposalDatas", []):
-                    if "licenseId" in item:
-                        all_licenses.add(item["licenseId"])
-        
-        return (address, all_licenses)
-
-    async def _query_subgraph(self, session: ClientSession, url: str, query: str) -> Optional[Dict]:
-        """Execute GraphQL query against subgraph"""
-        payload = {"query": query}
-        try:
-            async with session.post(url, json=payload) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-        except ClientError as e:
-            print(f"⚠️ Subgraph query failed: {e}")
-            return None
-
-    async def check_merklizer_status(self, session: ClientSession) -> None:
-        """Check status of ALL licenses from subgraph (not just our tracked ones)"""
-        all_licenses = set()
-        for licenses in self.subgraph_licenses.values():
-            all_licenses.update(licenses)
-        
-        # Also include our tracked licenses in case they're not in subgraph
         for licenses in self.tracked_licenses.values():
             all_licenses.update(licenses)
         
-        tasks = []
-        for license_id in all_licenses:
-            tasks.append(self._check_single_license(session, license_id))
+        # Process in batches to avoid overwhelming the endpoint
+        BATCH_SIZE = 20
+        licenses_list = list(all_licenses)
         
-        await asyncio.gather(*tasks)
+        for i in range(0, len(licenses_list), BATCH_SIZE):
+            batch = licenses_list[i:i+BATCH_SIZE]
+            tasks = [self._check_single_license(session, lid) for lid in batch]
+            await asyncio.gather(*tasks)
+            await asyncio.sleep(0.5)  # Rate limiting
 
     async def _check_single_license(self, session: ClientSession, license_id: str) -> None:
         """Check status of a single license"""
         url = f"{MERKLIZER_URL}/license_status?license={license_id}"
         try:
-            async with session.get(url) as resp:
+            async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     self.license_status[license_id] = data.get("status", "unknown")
@@ -143,109 +79,79 @@ class AddressClassifier:
         except ClientError:
             self.license_status[license_id] = "error"
 
-    def perform_final_classification(self) -> None:
+    def classify_addresses(self) -> None:
         """Classify addresses based on license statuses"""
         for address in self.tranche_addresses:
-            subgraph_licenses = self.subgraph_licenses.get(address, set())
-            tracked_licenses = self.tracked_licenses.get(address, set())
+            licenses = self.tracked_licenses.get(address, set())
             
-            # Check license statuses
-            has_dead = False
-            has_unknown = False
-            has_alive = False
-            
-            for license_id in subgraph_licenses:
+            # If no licenses at all, needs compensation
+            if not licenses:
+                self.address_categories["needs_compensation"].add(address)
+                continue
+                
+            # Check status of all licenses
+            all_alive = True
+            for license_id in licenses:
                 status = self.license_status.get(license_id, "unknown")
-                if status == "dead":
-                    has_dead = True
-                elif status == "unknown":
-                    has_unknown = True
-                elif status == "alive":
-                    has_alive = True
-            
-            # Classification rules:
-            if not subgraph_licenses:
-                # No licenses at all - compensate
-                self.address_categories["needs_compensation"].add(address)
-            elif has_dead:
-                # Any dead license - compensate
-                self.address_categories["needs_compensation"].add(address)
-            elif has_unknown and not has_alive:
-                # Only unknown licenses - compensate
-                self.address_categories["needs_compensation"].add(address)
-            elif has_unknown:
-                # Mix of alive and unknown - warning
-                self.address_categories["warning"].add(address)
-                self.address_categories["valid_active"].add(address)  # Still consider valid
-            else:
-                # All licenses alive
+                if status != "alive":
+                    all_alive = False
+                    break
+                    
+            if all_alive:
                 self.address_categories["valid_active"].add(address)
+            else:
+                self.address_categories["needs_compensation"].add(address)
 
     def generate_report(self) -> Dict[str, Any]:
-        """Generate comprehensive report with all verification details"""
+        """Generate comprehensive report"""
         report = {
             "summary": {
                 "total_addresses": len(self.tranche_addresses),
                 "valid_active": len(self.address_categories["valid_active"]),
                 "needs_compensation": len(self.address_categories["needs_compensation"]),
-                "warning": len(self.address_categories["warning"]),
             },
             "details": {
                 "valid_active": sorted(self.address_categories["valid_active"]),
                 "needs_compensation": sorted(self.address_categories["needs_compensation"]),
-                "warning": sorted(self.address_categories["warning"]),
             },
-            "verification_details": {}
+            "license_details": {}
         }
         
-        # Add detailed verification info for each address
+        # Add license status info for each address
         for address in self.tranche_addresses:
-            verification_data = {
-                "tracked_licenses": sorted(self.tracked_licenses.get(address, [])),
-                "subgraph_licenses": sorted(self.subgraph_licenses.get(address, [])),
-                "license_statuses": {
+            report["license_details"][address] = {
+                "licenses": sorted(self.tracked_licenses.get(address, [])),
+                "statuses": {
                     lid: self.license_status.get(lid, "unknown")
-                    for lid in self.subgraph_licenses.get(address, [])
-                }
+                    for lid in self.tracked_licenses.get(address, [])
+                },
+                "classification": ("valid_active" if address in self.address_categories["valid_active"]
+                                 else "needs_compensation")
             }
-            
-            # Determine classification
-            if address in self.address_categories["needs_compensation"]:
-                verification_data["classification"] = "needs_compensation"
-            elif address in self.address_categories["warning"]:
-                verification_data["classification"] = "warning (alive + unknown)"
-            else:
-                verification_data["classification"] = "valid_active"
-            
-            report["verification_details"][address] = verification_data
         
         return report
 
 async def main():
-    classifier = AddressClassifier()
+    checker = LicenseChecker()
     
     # Load data files
-    classifier.read_tranche_addresses("data_tillers/tranche1_addresses.txt")
-    classifier.read_hts_files("data_tillers/merk_data/hts{}.txt")
+    checker.read_tranche_addresses("data_tillers/tranche1_addresses.txt")
+    checker.read_hts_files("data_tillers/merk_data/hts{}.txt")
     
     async with ClientSession() as session:
-        # Verify with subgraph (get ALL licenses)
-        print("Fetching all licenses from subgraph...")
-        await classifier.verify_with_subgraph(session)
-        
-        # Check merklizer status for all licenses
+        # Check license statuses
         print("Checking license statuses with merklizer...")
-        await classifier.check_merklizer_status(session)
+        await checker.check_license_statuses(session)
     
-    # Perform final classification
-    classifier.perform_final_classification()
+    # Perform classification
+    checker.classify_addresses()
     
     # Generate and save report
-    report = classifier.generate_report()
-    with open("address_verification_report.json", "w") as f:
+    report = checker.generate_report()
+    with open("license_check_report.json", "w") as f:
         json.dump(report, f, indent=2)
     
-    print("Verification complete. Report saved to address_verification_report.json")
+    print("Verification complete. Report saved to license_check_report.json")
 
 if __name__ == "__main__":
     asyncio.run(main())
