@@ -13,8 +13,10 @@ class LicenseChecker:
         self.tracked_licenses: Dict[str, Set[str]] = {}  # Address -> license IDs
         self.license_status: Dict[str, str] = {}  # License ID -> status
         self.address_categories: Dict[str, Set[str]] = {
-            "valid_active": set(),      # All licenses alive
-            "needs_compensation": set() # Any license dead/unknown or no licenses
+            "valid_active": set(),       # All licenses alive
+            "needs_compensation": set(), # Any license dead
+            "unknown_status": set(),     # All licenses unknown
+            "needs_review": set()        # Mix of alive + unknown
         }
 
     def read_tranche_addresses(self, filename: str) -> None:
@@ -80,39 +82,49 @@ class LicenseChecker:
             self.license_status[license_id] = "error"
 
     def classify_addresses(self) -> None:
-        """Classify addresses based on license statuses"""
+        """Classify addresses based on license statuses with refined rules"""
         for address in self.tranche_addresses:
             licenses = self.tracked_licenses.get(address, set())
             
-            # If no licenses at all, needs compensation
-            if not licenses:
-                self.address_categories["needs_compensation"].add(address)
-                continue
-                
-            # Check status of all licenses
-            all_alive = True
+            # Count status types
+            status_counts = {
+                "alive": 0,
+                "dead": 0,
+                "unknown": 0,
+                "error": 0
+            }
+            
             for license_id in licenses:
                 status = self.license_status.get(license_id, "unknown")
-                if status != "alive":
-                    all_alive = False
-                    break
-                    
-            if all_alive:
-                self.address_categories["valid_active"].add(address)
-            else:
+                status_counts[status] += 1
+            
+            # Classification rules
+            if not licenses:
                 self.address_categories["needs_compensation"].add(address)
+            elif status_counts["dead"] > 0:
+                self.address_categories["needs_compensation"].add(address)
+            elif status_counts["unknown"] == len(licenses):
+                self.address_categories["unknown_status"].add(address)
+            elif status_counts["alive"] > 0 and status_counts["unknown"] > 0:
+                self.address_categories["needs_review"].add(address)
+            elif status_counts["alive"] == len(licenses):
+                self.address_categories["valid_active"].add(address)
 
     def generate_report(self) -> Dict[str, Any]:
-        """Generate comprehensive report"""
+        """Generate comprehensive report with refined categories"""
         report = {
             "summary": {
                 "total_addresses": len(self.tranche_addresses),
                 "valid_active": len(self.address_categories["valid_active"]),
                 "needs_compensation": len(self.address_categories["needs_compensation"]),
+                "unknown_status": len(self.address_categories["unknown_status"]),
+                "needs_review": len(self.address_categories["needs_review"]),
             },
             "details": {
                 "valid_active": sorted(self.address_categories["valid_active"]),
                 "needs_compensation": sorted(self.address_categories["needs_compensation"]),
+                "unknown_status": sorted(self.address_categories["unknown_status"]),
+                "needs_review": sorted(self.address_categories["needs_review"]),
             },
             "license_details": {}
         }
@@ -125,8 +137,10 @@ class LicenseChecker:
                     lid: self.license_status.get(lid, "unknown")
                     for lid in self.tracked_licenses.get(address, [])
                 },
-                "classification": ("valid_active" if address in self.address_categories["valid_active"]
-                                 else "needs_compensation")
+                "classification": next(
+                    k for k, v in self.address_categories.items() 
+                    if address in v
+                )
             }
         
         return report
@@ -148,10 +162,15 @@ async def main():
     
     # Generate and save report
     report = checker.generate_report()
-    with open("license_check_report.json", "w") as f:
+    with open("refined_license_report.json", "w") as f:
         json.dump(report, f, indent=2)
     
-    print("Verification complete. Report saved to license_check_report.json")
+    print("Verification complete. Report saved to refined_license_report.json")
+    print("\nClassification Summary:")
+    print(f"- Valid & Active: {len(checker.address_categories['valid_active'])} addresses")
+    print(f"- Needs Compensation: {len(checker.address_categories['needs_compensation'])} (dead licenses)")
+    print(f"- Unknown Status: {len(checker.address_categories['unknown_status'])} (all licenses unknown)")
+    print(f"- Needs Review: {len(checker.address_categories['needs_review'])} (mix of alive + unknown)")
 
 if __name__ == "__main__":
     asyncio.run(main())
