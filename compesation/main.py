@@ -46,8 +46,8 @@ async def main():
             print(f"     Block: {tx['blockNumber']}")
             print(f"     Amount: {amount:,.2f} USDC")
             print(f"     Date: {date_str}")
-            print(f"     From: {tx['from']}")
-            print(f"     To: {tx['to']}")
+            print(f"     From: {Web3.to_checksum_address(tx['from'])}")
+            print(f"     To: {Web3.to_checksum_address(tx['to'])}")
             print()
 
     print(f"Total deposits across all HTS nodes: {total_deposits}")
