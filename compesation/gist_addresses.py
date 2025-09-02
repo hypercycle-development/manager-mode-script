@@ -1,7 +1,6 @@
 from aiohttp import ClientSession, ClientError
 
 
-
 async def fetch_gist_addresses(gist_id: str) -> list[str]:
     url = f"https://api.github.com/gists/{gist_id}"
     async with ClientSession() as session:
@@ -11,19 +10,13 @@ async def fetch_gist_addresses(gist_id: str) -> list[str]:
                 gist_data = await response.json()
                 files = gist_data.get("files", {})
                 addresses = []
-                
-                tranche1_addresses_content: str = files.get("tranche1_addresses.txt", {}).get("content", "")
-                
+
+                tranche1_addresses_content: str = files.get(
+                    "tranche1_addresses.txt", {}
+                ).get("content", "")
+
                 return tranche1_addresses_content.splitlines()
-                
-                for file_info in files.values():
-                    content = file_info.get("content", "")
-                    addresses.extend(
-                        line.strip() for line in content.splitlines() if line.strip()
-                    )
-                return addresses
+
         except ClientError as e:
             print(f"Error fetching gist: {e}")
             return []
-
-
