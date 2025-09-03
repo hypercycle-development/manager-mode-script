@@ -18,24 +18,53 @@ async def get_address_from_node(node_url: str) -> str:
             return ""
 
 
-async def get_all_usdc_transactions(address: str) -> List[Dict[str, Any]]:
-    """Get all USDC transactions for an address"""
+async def get_all_usdc_transactions(
+    address: str, max_pages: int = 100
+) -> List[Dict[str, Any]]:
+    """Get all USDC transactions for an address with pagination"""
+    all_transactions = []
+    page = 1
+    offset = 1000  # Max allowed by Etherscan is 10000, but 1000 is safer
+
     async with ClientSession() as session:
-        try:
-            url = f"https://api.etherscan.io/api?module=account&action=tokentx&address={address}&contractaddress={USDC_CONTRACT_ADDRESS}&apikey={ETHERSCAN_API_KEY}"
-            async with session.get(url, timeout=30) as response:
-                response.raise_for_status()
-                data = await response.json()
+        while page <= max_pages:
+            try:
+                url = (
+                    f"https://api.etherscan.io/api?module=account"
+                    f"&action=tokentx"
+                    f"&address={address}"
+                    f"&contractaddress={USDC_CONTRACT_ADDRESS}"
+                    f"&page={page}"
+                    f"&offset={offset}"
+                    f"&apikey={ETHERSCAN_API_KEY}"
+                )
 
-                if data.get("status") == "1":
-                    return data.get("result", [])
-                else:
-                    print(f"Etherscan API error: {data.get('message')}")
-                    return []
+                async with session.get(url, timeout=30) as response:
+                    response.raise_for_status()
+                    data = await response.json()
 
-        except (ClientError, asyncio.TimeoutError) as e:
-            print(f"Error fetching transactions for {address}: {e}")
-            return []
+                    if data.get("status") == "1":
+                        transactions = data.get("result", [])
+                        if not transactions:
+                            break  # No more transactions
+
+                        all_transactions.extend(transactions)
+
+                        # If we got fewer than offset transactions, we've reached the end
+                        if len(transactions) < offset:
+                            break
+                    else:
+                        break
+
+            except (ClientError, asyncio.TimeoutError) as e:
+                print(f"Error fetching page {page} for {address}: {e}")
+                break
+
+            page += 1
+            # Add a small delay to avoid rate limiting
+            await asyncio.sleep(0.2)
+
+    return all_transactions
 
 
 async def get_deposits(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
