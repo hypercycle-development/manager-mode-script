@@ -1,21 +1,32 @@
 from aiohttp import ClientSession, ClientError
 from common import HTS_NODES, USDC_CONTRACT_ADDRESS, ETHERSCAN_API_KEY
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TypedDict
 import asyncio
 
 
-async def get_address_from_node(node_url: str) -> str:
+class Deposit(TypedDict):
+    _id: str
+    sender: str
+    value: int
+    status: str
+
+
+class DepositResponse(TypedDict):
+    data: List[Deposit]
+    total_count: int
+
+
+async def get_user_deposits_node(node_url: str, user_address: str) -> DepositResponse:
     async with ClientSession() as session:
         try:
-            async with session.get(f"{node_url}/info", timeout=30) as response:
+            async with session.get(
+                f"{node_url}/deposits?sender={user_address}", timeout=30
+            ) as response:
                 response.raise_for_status()
-                node_data = await response.json()
-                return (
-                    node_data.get("tm", {}).get("address", "").lower()
-                )  # Normalize to lowercase
+                return await response.json()
         except (ClientError, asyncio.TimeoutError) as e:
             print(f"Error fetching node data from {node_url}: {e}")
-            return ""
+            return DepositResponse(data=[], total_count=0)
 
 
 async def get_all_usdc_transactions(
@@ -67,7 +78,7 @@ async def get_all_usdc_transactions(
     return all_transactions
 
 
-async def get_deposits(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
+async def get_transfers(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
     """
     Find all USDC deposits from user_address to any HTS node
     Returns: {node_name: [list_of_transaction_objects]}
@@ -78,8 +89,6 @@ async def get_deposits(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
         node_data["address"].lower(): node_name
         for node_name, node_data in HTS_NODES.items()
     }
-    
-    print(node_addresses)
 
     # Get all USDC transactions for the user
     all_user_transactions = await get_all_usdc_transactions(user_address)
@@ -106,3 +115,10 @@ async def get_deposits(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
             results[node_name].append(transaction)
 
     return results
+
+
+async def get_node_deposits(
+    user_address: str, transfers: Dict[str, List[Dict[str, Any]]]
+):
+
+    pass

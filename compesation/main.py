@@ -4,7 +4,7 @@ from web3 import Web3
 from web3.exceptions import BlockNotFound, TransactionNotFound
 from typing import Literal
 from gist_addresses import fetch_gist_addresses
-from user_deposits import get_deposits
+from user_deposits import get_transfers, get_node_deposits
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id
 from datetime import datetime
 
@@ -17,16 +17,14 @@ async def main():
     address = "0x7b724C7cF60d4CEddAc00BE64f23E0c97C170182"
     # address = "0xA2Ace3F96851B825af9dcca4b19d648742bBddC6"
 
-    nodes_deposits = await get_deposits(address)
-
-    # print(deposits)
+    nodes_transfers = await get_transfers(address)
 
     print(f"\n=== DEPOSITS FOUND ===")
     total_deposits = 0
 
     # Sort by node name for consistent ordering
-    for node_name in sorted(nodes_deposits.keys()):
-        transactions = nodes_deposits[node_name]
+    for node_name in sorted(nodes_transfers.keys()):
+        transactions = nodes_transfers[node_name]
         print(f"\n{node_name}: {len(transactions)} deposit(s)")
         total_deposits += len(transactions)
 
