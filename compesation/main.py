@@ -17,7 +17,7 @@ async def main():
     address = "0x7b724C7cF60d4CEddAc00BE64f23E0c97C170182"
     # address = "0xA2Ace3F96851B825af9dcca4b19d648742bBddC6"
 
-    deposits = await get_deposits(address)
+    nodes_deposits = await get_deposits(address)
 
     # print(deposits)
 
@@ -25,8 +25,8 @@ async def main():
     total_deposits = 0
 
     # Sort by node name for consistent ordering
-    for node_name in sorted(deposits.keys()):
-        transactions = deposits[node_name]
+    for node_name in sorted(nodes_deposits.keys()):
+        transactions = nodes_deposits[node_name]
         print(f"\n{node_name}: {len(transactions)} deposit(s)")
         total_deposits += len(transactions)
 
