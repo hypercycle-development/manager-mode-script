@@ -7,7 +7,7 @@ import asyncio
 async def get_address_from_node(node_url: str) -> str:
     async with ClientSession() as session:
         try:
-            async with session.get(node_url, timeout=30) as response:
+            async with session.get(f"{node_url}/info", timeout=30) as response:
                 response.raise_for_status()
                 node_data = await response.json()
                 return (
@@ -78,6 +78,8 @@ async def get_deposits(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
         node_data["address"].lower(): node_name
         for node_name, node_data in HTS_NODES.items()
     }
+    
+    print(node_addresses)
 
     # Get all USDC transactions for the user
     all_user_transactions = await get_all_usdc_transactions(user_address)
