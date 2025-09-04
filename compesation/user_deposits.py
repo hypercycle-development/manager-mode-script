@@ -1,19 +1,13 @@
 from aiohttp import ClientSession, ClientError
-from common import HTS_NODES, USDC_CONTRACT_ADDRESS, ETHERSCAN_API_KEY
-from typing import List, Dict, Any, TypedDict
+from common import (
+    HTS_NODES,
+    USDC_CONTRACT_ADDRESS,
+    REFUND_WALLET_ADDRESS,
+    ETHERSCAN_API_KEY,
+)
+from typing import List, Dict, Any
+from app_types import DepositResponse, GetTransferResponse, TransferTx
 import asyncio
-
-
-class Deposit(TypedDict):
-    _id: str
-    sender: str
-    value: int
-    status: str
-
-
-class DepositResponse(TypedDict):
-    data: List[Deposit]
-    total_count: int
 
 
 async def get_user_deposits_node(node_url: str, user_address: str) -> DepositResponse:
@@ -78,10 +72,10 @@ async def get_all_usdc_transactions(
     return all_transactions
 
 
-async def get_transfers(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
+async def get_transfers(user_address: str) -> GetTransferResponse:
     """
     Find all USDC deposits from user_address to any HTS node
-    Returns: {node_name: [list_of_transaction_objects]}
+    And organize it between nodes and the type: To Node, Refund
     """
     # Normalize addresses for comparison
     user_address = user_address.lower()
@@ -95,10 +89,10 @@ async def get_transfers(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
 
     if not all_user_transactions:
         print(f"No USDC transactions found for address: {user_address}")
-        return {}
+        return {"nodes": {}, "refunds": []}
 
     # Filter for deposits to HTS nodes
-    results = {}
+    results = GetTransferResponse(nodes={}, refunds=[])
 
     for transaction in all_user_transactions:
         # Normalize transaction addresses
@@ -109,10 +103,17 @@ async def get_transfers(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
         if tx_from == user_address and tx_to in node_addresses:
             node_name = node_addresses[tx_to]
 
-            if node_name not in results:
-                results[node_name] = []
+            if node_name not in results["nodes"]:
+                results["nodes"][node_name] = []
 
-            results[node_name].append(transaction)
+            results["nodes"][node_name].append(TransferTx(**transaction))
+
+        # Check if this is a REFUND transaction (from refund wallet to user)
+        elif tx_from == REFUND_WALLET_ADDRESS.lower() and tx_to == user_address:
+            if "refunds" not in results:
+                results["refunds"] = []
+
+            results["refunds"].append(TransferTx(**transaction))
 
     return results
 
@@ -120,5 +121,34 @@ async def get_transfers(user_address: str) -> Dict[str, List[Dict[str, Any]]]:
 async def get_node_deposits(
     user_address: str, transfers: Dict[str, List[Dict[str, Any]]]
 ):
+    response = {"confirmed": [], "missing": []}
+
+    print("\n === CHECKING NODE DEPOSITS ===")
+    for node_name, transactions in sorted(transfers.items()):
+        print("\n")
+        node_url = HTS_NODES[node_name]["url"]
+        print(f"--- Fetching deposits from {node_name} at {node_url}...")
+
+        response = await get_user_deposits_node(node_url, user_address)
+        total_registered = len(response["data"])
+
+        if total_registered == len(transactions):
+            print(f"All deposits already recorded on {node_name}.")
+            continue
+        else:
+            # TODO: If there are missing deposits, should be counted and added as compensation
+            print(
+                f"Deposits on {node_name} differ: {response['total_count']} recorded vs {len(transactions)} found."
+            )
+
+        # if response["total_count"] == 0:
+        #     print(f"No deposits found on {node_name}.")
+        #     continue
+
+        print(f"Deposits found on {node_name}: {response['total_count']}")
+        for deposit in response["data"]:
+            print(
+                f"  Deposit ID: {deposit['_id']}, Amount: {int(deposit['value']) / 10**6} USDC, Status: {deposit['status']}"
+            )
 
     pass
