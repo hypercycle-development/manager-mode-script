@@ -119,7 +119,7 @@ async def get_transfers(user_address: str) -> GetTransferResponse:
 
 
 async def get_node_deposits(
-    user_address: str, transfers: Dict[str, List[Dict[str, Any]]]
+    user_address: str, transfers: Dict[str, List[TransferTx]]
 ):
     response = {"confirmed": [], "missing": []}
 
