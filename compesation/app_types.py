@@ -3,9 +3,12 @@ from typing import List, Dict, TypedDict
 
 class Deposit(TypedDict):
     _id: str
+    currency_type: str
+    registered_time: float
     sender: str
     value: int
     status: str
+    
 
 
 class DepositResponse(TypedDict):
@@ -22,6 +25,7 @@ TransferTx = TypedDict(
         "from": str,
         "to": str,
         "value": str,
+        "tokenSymbol": str
     },
 )
 
