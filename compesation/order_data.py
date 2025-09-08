@@ -1,5 +1,6 @@
 from typing import Dict
 from app_types import UserNodeData
+from app_types import EndBalanceResponse
 
 
 def get_remaining_as_usdc(
@@ -12,7 +13,9 @@ def get_remaining_as_usdc(
     return int((remaining_hypc * cost_in_usd) / cost_in_hypc)
 
 
-def calculate_end_balance(data: Dict[str, UserNodeData]):
+def calculate_end_balance(
+    data: Dict[str, UserNodeData],
+) -> Dict[str, EndBalanceResponse]:
     result = {}
 
     for node_name, user_data in data.items():
