@@ -8,7 +8,7 @@ from common import (
     MAX_BLOCK_NUMBER,
 )
 from typing import List, Dict, Any
-from app_types import DepositResponse, GetTransferResponse, TransferTx
+from app_types import DepositResponse, GetTransferResponse, TransferTx, UserNodeData
 import asyncio
 
 
@@ -224,7 +224,9 @@ async def get_transfers(user_address: str) -> GetTransferResponse:
     return results
 
 
-async def get_user_node_data(user_address: str, transfers: Dict[str, List[TransferTx]]):
+async def get_user_node_data(
+    user_address: str, transfers: Dict[str, List[TransferTx]]
+) -> Dict[str, UserNodeData]:
     results = {}
 
     for node_name, transactions in sorted(transfers.items()):
@@ -248,7 +250,7 @@ async def get_user_node_data(user_address: str, transfers: Dict[str, List[Transf
         total_registered = len(user_deposits["data"])
 
         if total_registered == len(transactions):
-            results[node_name]["registered_deposits"] = user_deposits["data"]
+            results[node_name]["registered_deposits"] = transactions
             results[node_name]["unregistered_deposits"] = []
             continue
         else:

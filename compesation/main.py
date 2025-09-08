@@ -7,8 +7,12 @@ from gist_addresses import fetch_gist_addresses
 from user_deposits import get_transfers, get_user_node_data
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id
 from datetime import datetime
+import json
+
 
 # from eth_utils import is_checksum_address, to_checksum_address
+
+# TODO: At the end, should look for deposits after Jan 1, 2025 and count them as missing deposits for compensation (no multiplier for these)
 
 
 async def main():
@@ -22,12 +26,6 @@ async def main():
     transfer_txs = await get_transfers(address)
     nodes_deposits_txs = transfer_txs["nodes"]
     refunds_txs = transfer_txs["refunds"]
-    
-    print(f"Refunds found: {len(refunds_txs)}")
-    import json
-    print(f"Refunds: {json.dumps(refunds_txs, indent=2)}")
-    
-    # print(json.dumps(transfer_txs, indent=4))
 
     response = await get_user_node_data(address, nodes_deposits_txs)
 

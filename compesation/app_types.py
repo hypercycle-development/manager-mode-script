@@ -8,7 +8,6 @@ class Deposit(TypedDict):
     sender: str
     value: int
     status: str
-    
 
 
 class DepositResponse(TypedDict):
@@ -25,7 +24,7 @@ TransferTx = TypedDict(
         "from": str,
         "to": str,
         "value": str,
-        "tokenSymbol": str
+        "tokenSymbol": str,
     },
 )
 
@@ -33,3 +32,10 @@ TransferTx = TypedDict(
 class GetTransferResponse(TypedDict):
     nodes: Dict[str, List[TransferTx]]
     refunds: List[TransferTx]
+
+
+class UserNodeData(TypedDict):
+    user_balance: int | None
+    user_interactions: List[Dict]
+    registered_deposits: List[TransferTx]
+    unregistered_deposits: List[TransferTx]
