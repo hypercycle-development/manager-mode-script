@@ -63,3 +63,7 @@ class UserNodeData(TypedDict):
     user_interactions: List[Interaction]
     registered_deposits: List[TransferTx]
     unregistered_deposits: List[TransferTx]
+    
+class EndBalanceResponse(TypedDict):
+    hypc: int
+    usdc: int
