@@ -5,6 +5,7 @@ from common import (
     HYPC_CONTRACT_ADDRESS,
     REFUND_WALLET_ADDRESS,
     ETHERSCAN_API_KEY,
+    MAX_BLOCK_NUMBER,
 )
 from typing import List, Dict, Any
 from app_types import DepositResponse, GetTransferResponse, TransferTx
@@ -39,6 +40,42 @@ async def get_user_balance_node(node_url: str, user_address: str) -> int | None:
             return 0
 
 
+async def get_user_interactions(
+    node_url: str, user_address: str
+) -> List[Dict[str, Any]]:
+    all_interactions = []
+    page = 1
+    page_size = 100
+
+    async with ClientSession() as session:
+        while page <= 10:
+            try:
+                async with session.get(
+                    f"{node_url}/interactions?user_address={user_address}&page_size={page_size}&page={page}",
+                    timeout=30,
+                ) as response:
+                    response.raise_for_status()
+                    interactions = await response.json()
+
+                    if not interactions or len(interactions) == 0:
+                        break
+
+                    # Add the fetched interactions to the main list
+                    all_interactions.extend(interactions)
+
+                    if len(interactions) < page_size:
+                        break
+
+            except (ClientError, asyncio.TimeoutError) as e:
+                print(f"Error fetching interactions from {node_url}: {e}")
+                return []
+
+            page += 1
+            await asyncio.sleep(0.2)
+
+    return all_interactions
+
+
 async def get_all_usdc_transactions(
     address: str, max_pages: int = 100
 ) -> List[Dict[str, Any]]:
@@ -57,6 +94,7 @@ async def get_all_usdc_transactions(
                     f"&contractaddress={USDC_CONTRACT_ADDRESS}"
                     f"&page={page}"
                     f"&offset={offset}"
+                    f"endblock={MAX_BLOCK_NUMBER}"
                     f"&apikey={ETHERSCAN_API_KEY}"
                 )
 
@@ -106,6 +144,7 @@ async def get_all_hypc_transactions(
                     f"&contractaddress={HYPC_CONTRACT_ADDRESS}"
                     f"&page={page}"
                     f"&offset={offset}"
+                    f"endblock={MAX_BLOCK_NUMBER}"
                     f"&apikey={ETHERSCAN_API_KEY}"
                 )
 
@@ -186,11 +225,8 @@ async def get_transfers(user_address: str) -> GetTransferResponse:
 
 
 async def get_user_node_data(user_address: str, transfers: Dict[str, List[TransferTx]]):
-    user_deposits = {"confirmed": [], "missing": []}
     results = {}
-    import json
 
-    print("\n === CHECKING NODE DEPOSITS ===")
     for node_name, transactions in sorted(transfers.items()):
         # Individual node URL
         node_url = HTS_NODES[node_name]["url"]
@@ -198,27 +234,24 @@ async def get_user_node_data(user_address: str, transfers: Dict[str, List[Transf
         # Initialize results for this node
         results[node_name] = {}
 
-        print(f" \n --- Fetching data from {node_name} at {node_url}...")
-
         # Get user balance on the node
         user_balance = await get_user_balance_node(node_url, user_address)
         results[node_name]["user_balance"] = user_balance
 
-        print(f"User balance on {node_name}: {json.dumps(user_balance, indent=2)}")
+        # Get user interactions on the node
+        user_interactions = await get_user_interactions(node_url, user_address)
+        results[node_name]["user_interactions"] = user_interactions
 
+        # Get the user deposits
         user_deposits = await get_user_deposits_node(node_url, user_address)
 
         total_registered = len(user_deposits["data"])
 
         if total_registered == len(transactions):
             results[node_name]["registered_deposits"] = user_deposits["data"]
-            print(f"All deposits already recorded on {node_name}.")
+            results[node_name]["unregistered_deposits"] = []
             continue
         else:
-            # TODO: If there are missing deposits, should be counted and added as compensation
-            print(
-                f"Deposits on {node_name} differ: {total_registered} recorded vs {len(transactions)} found."
-            )
 
             # Extract recorded transaction hashes
             recorded_hashes = {tx["_id"].lower() for tx in user_deposits["data"]}
@@ -228,18 +261,11 @@ async def get_user_node_data(user_address: str, transfers: Dict[str, List[Transf
                 tx for tx in transactions if tx["hash"].lower() not in recorded_hashes
             ]
 
-            print(f"Total recorded txs: {(recorded_hashes)}")
-            print(f"Total not recorded: {len(unrecorded_transactions)}")
-            print(f"txs not recorded: {json.dumps(unrecorded_transactions, indent=2)}")
+            recorded_transactions = [
+                tx for tx in transactions if tx["hash"].lower() in recorded_hashes
+            ]
 
-        # if response["total_count"] == 0:
-        #     print(f"No deposits found on {node_name}.")
-        #     continue
+            results[node_name]["registered_deposits"] = recorded_transactions
+            results[node_name]["unregistered_deposits"] = unrecorded_transactions
 
-        print(f"Deposits found on {node_name}: {total_registered}")
-        for deposit in user_deposits["data"]:
-            print(
-                f"  Deposit ID: {deposit['_id']}, Amount: {int(deposit['value']) / 10**6} {deposit['currency_type']}, Status: {deposit['status']}"
-            )
-
-    pass
+    return results
