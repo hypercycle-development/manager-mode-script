@@ -8,7 +8,13 @@ from common import (
     MAX_BLOCK_NUMBER,
 )
 from typing import List, Dict, Any
-from app_types import DepositResponse, GetTransferResponse, TransferTx, UserNodeData
+from app_types import (
+    DepositResponse,
+    GetTransferResponse,
+    TransferTx,
+    UserNodeData,
+    Interaction,
+)
 import asyncio
 
 
@@ -40,9 +46,7 @@ async def get_user_balance_node(node_url: str, user_address: str) -> int | None:
             return 0
 
 
-async def get_user_interactions(
-    node_url: str, user_address: str
-) -> List[Dict[str, Any]]:
+async def get_user_interactions(node_url: str, user_address: str) -> List[Interaction]:
     all_interactions = []
     page = 1
     page_size = 100
