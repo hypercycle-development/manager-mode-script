@@ -23,7 +23,10 @@ async def main():
     nodes_deposits_txs = transfer_txs["nodes"]
     refunds_txs = transfer_txs["refunds"]
     
+    print(f"Refunds found: {len(refunds_txs)}")
     import json
+    print(f"Refunds: {json.dumps(refunds_txs, indent=2)}")
+    
     # print(json.dumps(transfer_txs, indent=4))
 
     response = await get_user_node_data(address, nodes_deposits_txs)

@@ -14,8 +14,9 @@ import asyncio
 async def get_user_deposits_node(node_url: str, user_address: str) -> DepositResponse:
     async with ClientSession() as session:
         try:
+            # It's very unlikely to have more than 100 deposits (atm)
             async with session.get(
-                f"{node_url}/deposits?sender={user_address}", timeout=30
+                f"{node_url}/deposits?sender={user_address}&page_size=100", timeout=30
             ) as response:
                 response.raise_for_status()
                 return await response.json()
@@ -187,18 +188,30 @@ async def get_transfers(user_address: str) -> GetTransferResponse:
 async def get_user_node_data(user_address: str, transfers: Dict[str, List[TransferTx]]):
     user_deposits = {"confirmed": [], "missing": []}
     results = {}
+    import json
 
     print("\n === CHECKING NODE DEPOSITS ===")
     for node_name, transactions in sorted(transfers.items()):
+        # Individual node URL
         node_url = HTS_NODES[node_name]["url"]
-        print(f" \n --- Fetching deposits from {node_name} at {node_url}...")
+
+        # Initialize results for this node
+        results[node_name] = {}
+
+        print(f" \n --- Fetching data from {node_name} at {node_url}...")
+
+        # Get user balance on the node
+        user_balance = await get_user_balance_node(node_url, user_address)
+        results[node_name]["user_balance"] = user_balance
+
+        print(f"User balance on {node_name}: {json.dumps(user_balance, indent=2)}")
 
         user_deposits = await get_user_deposits_node(node_url, user_address)
-        user_balance = await get_user_balance_node(node_url, user_address)
 
         total_registered = len(user_deposits["data"])
 
         if total_registered == len(transactions):
+            results[node_name]["registered_deposits"] = user_deposits["data"]
             print(f"All deposits already recorded on {node_name}.")
             continue
         else:
@@ -214,8 +227,6 @@ async def get_user_node_data(user_address: str, transfers: Dict[str, List[Transf
             unrecorded_transactions = [
                 tx for tx in transactions if tx["hash"].lower() not in recorded_hashes
             ]
-
-            import json
 
             print(f"Total recorded txs: {(recorded_hashes)}")
             print(f"Total not recorded: {len(unrecorded_transactions)}")
