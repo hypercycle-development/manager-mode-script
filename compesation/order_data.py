@@ -9,7 +9,7 @@ def get_remaining_as_usdc(
     # cost_in_usd === cost_in_hypc
     #       X usd    === remaining_hypc
 
-    # Assume usd==usdc
+    # Assume usd==USDC
     return int((remaining_hypc * cost_in_usd) / cost_in_hypc)
 
 
@@ -21,8 +21,8 @@ def calculate_end_balance(
     for node_name, user_data in data.items():
         # Open a new entry for this node
         result[node_name] = {
-            "hypc": 0,
-            "usdc": 0,
+            "HyPC": 0,
+            "USDC": 0,
         }
 
         # Combine and sort registered deposits and interactions by timestamp
@@ -53,7 +53,7 @@ def calculate_end_balance(
                     "hypc_used": int(
                         interaction["value_used"].get("HyPC", {"used": 0})["used"]
                     ),
-                    # usdc used most likely is 0, but just added for safety
+                    # USDC used most likely is 0, but just added for safety
                     "usdc_used": int(
                         interaction["value_used"].get("USDC", {"used": 0})["used"]
                     ),
@@ -69,9 +69,9 @@ def calculate_end_balance(
                 amount = event["amount"]
 
                 if token == "USDC":
-                    result[node_name]["usdc"] += amount
+                    result[node_name]["USDC"] += amount
                 elif token == "HyPC":
-                    result[node_name]["hypc"] += amount
+                    result[node_name]["HyPC"] += amount
                 else:
                     # Not gonna happen but safe case
                     pass
@@ -79,22 +79,22 @@ def calculate_end_balance(
                 usd_cost = event["usd_cost"]
                 hypc_used = event["hypc_used"]
 
-                if result[node_name]["hypc"] >= hypc_used:
-                    # This menas, that no usdc was needed
-                    result[node_name]["hypc"] -= hypc_used
+                if result[node_name]["HyPC"] >= hypc_used:
+                    # This menas, that no USDC was needed
+                    result[node_name]["HyPC"] -= hypc_used
                 else:
                     # Getting amount remaining as USDC equivalent
-                    remaining_hypc = hypc_used - result[node_name]["hypc"]
+                    remaining_hypc = hypc_used - result[node_name]["HyPC"]
                     usdc_equivalent = get_remaining_as_usdc(
                         usd_cost, hypc_used, remaining_hypc
                     )
 
                     # Updating balances
-                    result[node_name]["hypc"] = 0  # No remaining hypc
+                    result[node_name]["HyPC"] = 0  # No remaining HyPC
 
                     # If the interaction was made, then we got the cost, but maybe our calculation is off so we can safetly check here
-                    result[node_name]["usdc"] = max(
-                        0, result[node_name]["usdc"] - usdc_equivalent
+                    result[node_name]["USDC"] = max(
+                        0, result[node_name]["USDC"] - usdc_equivalent
                     )
 
     return result

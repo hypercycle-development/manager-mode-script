@@ -65,5 +65,5 @@ class UserNodeData(TypedDict):
     unregistered_deposits: List[TransferTx]
     
 class EndBalanceResponse(TypedDict):
-    hypc: int
-    usdc: int
+    HyPC: int
+    USDC: int
