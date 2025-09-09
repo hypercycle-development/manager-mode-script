@@ -56,8 +56,6 @@ async def main():
 
         total_balance += max(user_calculated_balance, user_node_balance)
 
-    print(f"Total balance before refunds and tx no registered: {total_balance}")
-
     unregistered_deposits: List[TransferTx] = []
 
     for data in user_node_data.values():
@@ -70,13 +68,15 @@ async def main():
     for deposit in unregistered_deposits:
         total_balance += int(deposit["value"])
 
-    print(f"Total balance before refunds: {total_balance}")
-
     for refunds in refunds_txs:
         if refunds["tokenSymbol"] == "USDC":
             total_balance -= int(refunds["value"])
 
-    print(f"Total balance END1: {total_balance}")
+    print(f"Total balance END: {total_balance}")
+
+    for node_name, node_data in user_node_data.items():
+        node_data["user_interactions"]
+        pass
 
 
 if __name__ == "__main__":

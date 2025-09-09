@@ -79,7 +79,7 @@ async def get_user_interactions(node_url: str, user_address: str) -> List[Intera
             page += 1
             await asyncio.sleep(0.2)
 
-    return all_interactions
+    return sorted(all_interactions, key=lambda x: x["timestamp"])
 
 
 async def get_all_usdc_transactions(
