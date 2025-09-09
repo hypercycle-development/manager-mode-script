@@ -167,7 +167,7 @@ def get_data_from_interactions(
                     #     f"Wanted to create a tiller for {int(interaction['cost'][0]['used'] / 5000000)} months"
                     # )
                 # else:
-                    # print("Failed to create this tiller")
+                # print("Failed to create this tiller")
             elif "/update" in interaction["uri"]:
                 parsed_url = urlparse("http://" + interaction["uri"])
                 query_params = parse_qs(parsed_url.query)
@@ -176,4 +176,4 @@ def get_data_from_interactions(
                 licenses.add(int(license_value))
                 # print(f"Wanted to start tilling license: {license_value}")
 
-    return list(licenses), tillers_created
+    return sorted(list(licenses)), tillers_created
