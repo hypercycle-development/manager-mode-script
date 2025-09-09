@@ -59,7 +59,7 @@ class Interaction(TypedDict):
 
 
 class UserNodeData(TypedDict):
-    user_balance: int | None
+    user_balance: Dict[str,int] | None
     user_interactions: List[Interaction]
     registered_deposits: List[TransferTx]
     unregistered_deposits: List[TransferTx]
