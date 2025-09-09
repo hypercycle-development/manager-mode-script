@@ -3,7 +3,7 @@ from common import (
     HTS_NODES,
     USDC_CONTRACT_ADDRESS,
     HYPC_CONTRACT_ADDRESS,
-    REFUND_WALLET_ADDRESS,
+    REFUND_WALLET_ADDRESSES_SET,
     ETHERSCAN_API_KEY,
     MAX_BLOCK_NUMBER,
 )
@@ -32,7 +32,9 @@ async def get_user_deposits_node(node_url: str, user_address: str) -> DepositRes
             return DepositResponse(data=[], total_count=0)
 
 
-async def get_user_balance_node(node_url: str, user_address: str) -> int | None:
+async def get_user_balance_node(
+    node_url: str, user_address: str
+) -> Dict[str, int] | None:
     async with ClientSession() as session:
         try:
             async with session.get(f"{node_url}/balances", timeout=30) as response:
@@ -43,7 +45,7 @@ async def get_user_balance_node(node_url: str, user_address: str) -> int | None:
 
         except (ClientError, asyncio.TimeoutError) as e:
             print(f"Error fetching balance from {node_url}: {e}")
-            return 0
+            return None
 
 
 async def get_user_interactions(node_url: str, user_address: str) -> List[Interaction]:
@@ -218,8 +220,8 @@ async def get_transfers(user_address: str) -> GetTransferResponse:
 
             results["nodes"][node_name].append(TransferTx(**transaction))
 
-        # Check if this is a REFUND transaction (from refund wallet to user)
-        elif tx_from == REFUND_WALLET_ADDRESS.lower() and tx_to == user_address:
+        # Check if this is a REFUND transaction (from any refund wallet to user)
+        elif tx_from in REFUND_WALLET_ADDRESSES_SET and tx_to == user_address:
             if "refunds" not in results:
                 results["refunds"] = []
 

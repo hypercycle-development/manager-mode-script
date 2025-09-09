@@ -10,6 +10,14 @@ from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id
 from datetime import datetime
 import json
 
+from typing import List, Dict, Any
+from app_types import (
+    DepositResponse,
+    GetTransferResponse,
+    TransferTx,
+    UserNodeData,
+    Interaction,
+)
 
 # from eth_utils import is_checksum_address, to_checksum_address
 
@@ -31,6 +39,44 @@ async def main():
     user_node_data = await get_user_node_data(address, nodes_deposits_txs)
 
     calculated_balances = calculate_end_balance(user_node_data)
+
+    # Sum all the balances into just one. We only will take care of the USDC.
+    # Only get the Max between the balances comming from the user node data and calculated balacnes for each node
+
+    total_balance = 0
+
+    for node_name in calculated_balances:
+        user_calculated_balance = calculated_balances[node_name]["USDC"]
+
+        user_balance_data = user_node_data[node_name]["user_balance"]
+        user_node_balance = 0
+
+        if user_balance_data is not None:
+            user_balance_data.get("USDC", 0)
+
+        total_balance += max(user_calculated_balance, user_node_balance)
+
+    print(f"Total balance before refunds and tx no registered: {total_balance}")
+
+    unregistered_deposits: List[TransferTx] = []
+
+    for data in user_node_data.values():
+        to_save = [
+            tx for tx in data["unregistered_deposits"] if tx["tokenSymbol"] == "USDC"
+        ]
+
+        unregistered_deposits.extend(to_save)
+
+    for deposit in unregistered_deposits:
+        total_balance += int(deposit["value"])
+
+    print(f"Total balance before refunds: {total_balance}")
+
+    for refunds in refunds_txs:
+        if refunds["tokenSymbol"] == "USDC":
+            total_balance -= int(refunds["value"])
+
+    print(f"Total balance END1: {total_balance}")
 
 
 if __name__ == "__main__":
