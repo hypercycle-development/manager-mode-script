@@ -5,11 +5,14 @@ from web3.exceptions import BlockNotFound, TransactionNotFound
 from typing import Literal
 from gist_addresses import fetch_gist_addresses
 from user_deposits import get_transfers, get_user_node_data
-from order_data import calculate_end_balance_per_node, calculate_total_balance
+from order_data import (
+    calculate_end_balance_per_node,
+    calculate_total_balance,
+    get_data_from_interactions,
+)
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id
 from datetime import datetime
 import json
-from urllib.parse import urlparse, parse_qs
 
 from typing import List, Dict, Any
 from app_types import (
@@ -48,32 +51,11 @@ async def main():
     print(f"Total balance END: {total_balance}")
     print("-" * 20)
 
-    licenses: set[int] = set([])
-
-    for node_name, node_data in user_node_data.items():
-        # node_data["user_interactions"]
-        print(node_name)
-        # print(json.dumps(node_data["user_interactions"], indent=2))
-
-        for interaction in node_data["user_interactions"]:
-            if "/create" in interaction["uri"]:
-                if interaction["status_code"] == 200:
-                    print(
-                        f"Wanted to create a tiller for {int(interaction['cost'][0]['used'] / 5000000)} months"
-                    )
-                else:
-                    print("Failed to create this tiller")
-            elif "/update" in interaction["uri"]:
-                parsed_url = urlparse("http://" + interaction["uri"])
-                query_params = parse_qs(parsed_url.query)
-                license_value = query_params.get("license", [""])[0]
-                licenses.add(int(license_value))
-                print(f"Wanted to start tilling license: {license_value}")
-
-        # passaaal2224
+    licenses, tillers_created = get_data_from_interactions(user_node_data)
 
     print("- LICENSES:")
     print(sorted(licenses))
+    print(f"tillers_created: {tillers_created}")
 
 
 if __name__ == "__main__":

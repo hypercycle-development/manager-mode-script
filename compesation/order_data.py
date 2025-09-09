@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from app_types import (
     EndBalanceResponse,
     UserNodeData,
@@ -8,6 +8,7 @@ from app_types import (
     UserNodeData,
     Interaction,
 )
+from urllib.parse import urlparse, parse_qs
 
 
 def get_remaining_as_usdc(
@@ -144,3 +145,35 @@ def calculate_total_balance(
             total_balance -= int(refunds["value"])
 
     return total_balance
+
+
+def get_data_from_interactions(
+    user_node_data: Dict[str, UserNodeData],
+) -> Tuple[List[int], int]:
+    tillers_created = 0
+
+    # Licenses used
+    licenses: set[int] = set([])
+
+    for node_name, node_data in user_node_data.items():
+        print(node_name)
+        # print(json.dumps(node_data["user_interactions"], indent=2))
+
+        for interaction in node_data["user_interactions"]:
+            if "/create" in interaction["uri"]:
+                if interaction["status_code"] == 200:
+                    tillers_created += 1
+                    # print(
+                    #     f"Wanted to create a tiller for {int(interaction['cost'][0]['used'] / 5000000)} months"
+                    # )
+                # else:
+                    # print("Failed to create this tiller")
+            elif "/update" in interaction["uri"]:
+                parsed_url = urlparse("http://" + interaction["uri"])
+                query_params = parse_qs(parsed_url.query)
+
+                license_value = query_params.get("license", [""])[0]
+                licenses.add(int(license_value))
+                # print(f"Wanted to start tilling license: {license_value}")
+
+    return list(licenses), tillers_created
