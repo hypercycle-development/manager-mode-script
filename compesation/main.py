@@ -5,10 +5,11 @@ from web3.exceptions import BlockNotFound, TransactionNotFound
 from typing import Literal
 from gist_addresses import fetch_gist_addresses
 from user_deposits import get_transfers, get_user_node_data
-from order_data import calculate_end_balance
+from order_data import calculate_end_balance_per_node, calculate_total_balance
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id
 from datetime import datetime
 import json
+from urllib.parse import urlparse, parse_qs
 
 from typing import List, Dict, Any
 from app_types import (
@@ -38,45 +39,41 @@ async def main():
 
     user_node_data = await get_user_node_data(address, nodes_deposits_txs)
 
-    calculated_balances = calculate_end_balance(user_node_data)
+    calculated_balances = calculate_end_balance_per_node(user_node_data)
 
-    # Sum all the balances into just one. We only will take care of the USDC.
-    # Only get the Max between the balances comming from the user node data and calculated balacnes for each node
-
-    total_balance = 0
-
-    for node_name in calculated_balances:
-        user_calculated_balance = calculated_balances[node_name]["USDC"]
-
-        user_balance_data = user_node_data[node_name]["user_balance"]
-        user_node_balance = 0
-
-        if user_balance_data is not None:
-            user_balance_data.get("USDC", 0)
-
-        total_balance += max(user_calculated_balance, user_node_balance)
-
-    unregistered_deposits: List[TransferTx] = []
-
-    for data in user_node_data.values():
-        to_save = [
-            tx for tx in data["unregistered_deposits"] if tx["tokenSymbol"] == "USDC"
-        ]
-
-        unregistered_deposits.extend(to_save)
-
-    for deposit in unregistered_deposits:
-        total_balance += int(deposit["value"])
-
-    for refunds in refunds_txs:
-        if refunds["tokenSymbol"] == "USDC":
-            total_balance -= int(refunds["value"])
+    total_balance = calculate_total_balance(
+        user_node_data, calculated_balances, refunds_txs
+    )
 
     print(f"Total balance END: {total_balance}")
+    print("-" * 20)
+
+    licenses: set[int] = set([])
 
     for node_name, node_data in user_node_data.items():
-        node_data["user_interactions"]
-        pass
+        # node_data["user_interactions"]
+        print(node_name)
+        # print(json.dumps(node_data["user_interactions"], indent=2))
+
+        for interaction in node_data["user_interactions"]:
+            if "/create" in interaction["uri"]:
+                if interaction["status_code"] == 200:
+                    print(
+                        f"Wanted to create a tiller for {int(interaction['cost'][0]['used'] / 5000000)} months"
+                    )
+                else:
+                    print("Failed to create this tiller")
+            elif "/update" in interaction["uri"]:
+                parsed_url = urlparse("http://" + interaction["uri"])
+                query_params = parse_qs(parsed_url.query)
+                license_value = query_params.get("license", [""])[0]
+                licenses.add(int(license_value))
+                print(f"Wanted to start tilling license: {license_value}")
+
+        # passaaal2224
+
+    print("- LICENSES:")
+    print(sorted(licenses))
 
 
 if __name__ == "__main__":

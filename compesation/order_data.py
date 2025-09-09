@@ -1,6 +1,13 @@
-from typing import Dict
-from app_types import UserNodeData
-from app_types import EndBalanceResponse
+from typing import List, Dict, Any
+from app_types import (
+    EndBalanceResponse,
+    UserNodeData,
+    DepositResponse,
+    GetTransferResponse,
+    TransferTx,
+    UserNodeData,
+    Interaction,
+)
 
 
 def get_remaining_as_usdc(
@@ -13,7 +20,7 @@ def get_remaining_as_usdc(
     return int((remaining_hypc * cost_in_usd) / cost_in_hypc)
 
 
-def calculate_end_balance(
+def calculate_end_balance_per_node(
     data: Dict[str, UserNodeData],
 ) -> Dict[str, EndBalanceResponse]:
     result = {}
@@ -98,3 +105,42 @@ def calculate_end_balance(
                     )
 
     return result
+
+
+def calculate_total_balance(
+    user_node_data: Dict[str, UserNodeData],
+    calculated_balances: Dict[str, EndBalanceResponse],
+    refunds_txs: List[TransferTx],
+):
+    # Sum all the balances into just one. We only will take care of the USDC.
+    # Only get the Max between the balances comming from the user node data and calculated balacnes for each node
+    total_balance = 0
+
+    for node_name in calculated_balances:
+        user_calculated_balance = calculated_balances[node_name]["USDC"]
+
+        user_balance_data = user_node_data[node_name]["user_balance"]
+        user_node_balance = 0
+
+        if user_balance_data is not None:
+            user_balance_data.get("USDC", 0)
+
+        total_balance += max(user_calculated_balance, user_node_balance)
+
+    unregistered_deposits: List[TransferTx] = []
+
+    for data in user_node_data.values():
+        to_save = [
+            tx for tx in data["unregistered_deposits"] if tx["tokenSymbol"] == "USDC"
+        ]
+
+        unregistered_deposits.extend(to_save)
+
+    for deposit in unregistered_deposits:
+        total_balance += int(deposit["value"])
+
+    for refunds in refunds_txs:
+        if refunds["tokenSymbol"] == "USDC":
+            total_balance -= int(refunds["value"])
+
+    return total_balance
