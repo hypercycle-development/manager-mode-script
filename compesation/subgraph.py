@@ -7,18 +7,18 @@ from eth_account.messages import encode_defunct
 from eth_utils.address import to_checksum_address
 from aiohttp import ClientSession, ClientError
 from typing import Optional, List, Dict, Any, Tuple
-from common import MAX_TIMESTAMP_UTC
+from common import MAX_BLOCK_NUMBER
 from app_types import ProposalData
 
 # Subgraph endpoints
 SUBGRAPHS = {
     "mainnet": {
-        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum/v0.7.32",
-        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base/v0.7.32",
+        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum/v0.7.34",
+        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base/v0.7.34",
     },
     "testnet": {
-        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum-sepolia/v0.7.32",
-        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base-sepolia/v0.7.32",
+        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum-sepolia/v0.7.34",
+        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base-sepolia/v0.7.34",
     },
 }
 
@@ -37,7 +37,7 @@ async def query_subgraph(
         return None
 
 
-def build_query_for_licenses(ADDRESS: str, TIMESTAMP: int = MAX_TIMESTAMP_UTC) -> str:
+def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER) -> str:
     """Generate the GraphQL query"""
     return f"""
     {{
@@ -46,11 +46,12 @@ def build_query_for_licenses(ADDRESS: str, TIMESTAMP: int = MAX_TIMESTAMP_UTC) -
             orderBy: licenseId
             where: {{
                 or: [
-                    {{ rTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, shareToken_: {{ blockTimestamp_lte: {TIMESTAMP} }} }}
-                    {{ wTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, shareToken_: {{ blockTimestamp_lte: {TIMESTAMP} }} }}
-                    {{ operator: "{ADDRESS}", shareToken_: {{ blockTimestamp_lte: {TIMESTAMP} }} }}
+                    {{ rTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }} }}
+                    {{ wTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }} }}
+                    {{ operator: "{ADDRESS}" }}
                 ]
             }}
+            block: {{ number: {BLOCK_NUMBER} }}
         ) {{
             proposalId
             shareNumberId
@@ -62,7 +63,7 @@ def build_query_for_licenses(ADDRESS: str, TIMESTAMP: int = MAX_TIMESTAMP_UTC) -
             operatorString
             shareToken {{
                     shareMessage
-                    messageChanged (orderBy: blockTimestamp, orderDirection: asc, where: {{ blockTimestamp_lte: {TIMESTAMP} }}) {{
+                    messageChanged (orderBy: blockTimestamp, orderDirection: asc) {{
                     newMessage
                     blockTimestamp
                 }}
@@ -78,12 +79,11 @@ async def get_licenses_data(user_address: str) -> List[ProposalData]:
     async with ClientSession() as session:
         res = await query_subgraph(
             session,
-            "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum/v0.7.32",
+            SUBGRAPHS["mainnet"]["ethereum"],
             query,
         )
-        
+
         if not res or res.get("data", None) is None:
             raise RuntimeError("Not valid subgrah response")
 
-        return res['data']['shareProposalDatas']
-
+        return res["data"]["shareProposalDatas"]
