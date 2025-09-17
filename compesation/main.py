@@ -57,12 +57,19 @@ async def main():
     # print("- LICENSES:")
     # print(sorted(licenses))
     # print(f"tillers_created: {tillers_created}")
-    
+
+    # Get all the Proposals/NodeFactoires with the Licenses from Subgraph
     licenses_data = await get_licenses_data(address)
-    
-    print(json.dumps(licenses_data, indent=2))
-    
-    
+
+    licenses = []  # FIXME: remove this line, only for debug
+    sg_licenses: set[int] = set(licenses)
+
+    # Get each license as unique item
+    for l_ in licenses_data:
+        sg_licenses.add(int(l_["licenseId"]))
+
+    print("- SG LICENSES:")
+    print(sorted(sg_licenses))
 
 
 if __name__ == "__main__":
