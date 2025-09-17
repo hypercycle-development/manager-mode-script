@@ -10,6 +10,7 @@ from order_data import (
     calculate_total_balance,
     get_data_from_interactions,
 )
+from subgraph import get_licenses_data
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id
 from datetime import datetime
 import json
@@ -36,26 +37,32 @@ async def main():
     # address = "0xA2Ace3F96851B825af9dcca4b19d648742bBddC6"
     # address = "0xDf16f62824Ad0373DBb271FF7C3b81a6Ce119dEd"
 
-    transfer_txs = await get_transfers(address)
-    nodes_deposits_txs = transfer_txs["nodes"]
-    refunds_txs = transfer_txs["refunds"]
+    # transfer_txs = await get_transfers(address)
+    # nodes_deposits_txs = transfer_txs["nodes"]
+    # refunds_txs = transfer_txs["refunds"]
 
-    user_node_data = await get_user_node_data(address, nodes_deposits_txs)
+    # user_node_data = await get_user_node_data(address, nodes_deposits_txs)
 
-    calculated_balances = calculate_end_balance_per_node(user_node_data)
+    # calculated_balances = calculate_end_balance_per_node(user_node_data)
 
-    total_balance = calculate_total_balance(
-        user_node_data, calculated_balances, refunds_txs
-    )
+    # total_balance = calculate_total_balance(
+    #     user_node_data, calculated_balances, refunds_txs
+    # )
 
-    print(f"Total balance END: {total_balance}")
-    print("-" * 20)
+    # print(f"Total balance END: {total_balance}")
+    # print("-" * 20)
 
-    licenses, tillers_created = get_data_from_interactions(user_node_data)
+    # licenses, tillers_created = get_data_from_interactions(user_node_data)
 
-    print("- LICENSES:")
-    print(sorted(licenses))
-    print(f"tillers_created: {tillers_created}")
+    # print("- LICENSES:")
+    # print(sorted(licenses))
+    # print(f"tillers_created: {tillers_created}")
+    
+    licenses_data = await get_licenses_data(address)
+    
+    print(json.dumps(licenses_data, indent=2))
+    
+    
 
 
 if __name__ == "__main__":

@@ -59,11 +59,39 @@ class Interaction(TypedDict):
 
 
 class UserNodeData(TypedDict):
-    user_balance: Dict[str,int] | None
+    user_balance: Dict[str, int] | None
     user_interactions: List[Interaction]
     registered_deposits: List[TransferTx]
     unregistered_deposits: List[TransferTx]
-    
+
+
 class EndBalanceResponse(TypedDict):
     HyPC: int
     USDC: int
+
+
+class MessageChangedSG(TypedDict):
+    newMessage: str
+    blockTimestamp: str
+
+
+class ShareTokenSG(TypedDict):
+    shareMessage: str
+    messageChanged: List[MessageChangedSG]
+
+
+class ProposalData(TypedDict):
+    proposalId: str
+    shareNumberId: str
+    shareNumberId: str
+    chypcId: str
+    licenseId: str
+    rTokenId: str
+    wTokenId: str
+    operator: str
+    operatorString: str
+    shareToken: ShareTokenSG
+
+
+class ShareProposalSubgraphResponse(TypedDict):
+    shareProposalDatas: List[ProposalData]
