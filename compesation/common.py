@@ -13,7 +13,7 @@ MAX_TIMESTAMP_UTC = 1754006400  # August 1, 2025
 MAX_BLOCK_NUMBER = 23042514  # Exact block number for August 1, 2025
 
 # Merklizer Mainnet
-MERKLIZER_URL = "18.216.251.149:8003"
+MERKLIZER_URL = "http://18.216.251.149:8003"
 
 
 HTS_NODES = {
