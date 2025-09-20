@@ -155,8 +155,8 @@ def get_data_from_interactions(
     # Licenses used
     licenses: set[int] = set([])
 
-    for node_name, node_data in user_node_data.items():
-        print(node_name)
+    for _, node_data in user_node_data.items():
+        # print(node_name)
         # print(json.dumps(node_data["user_interactions"], indent=2))
 
         for interaction in node_data["user_interactions"]:
