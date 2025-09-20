@@ -11,7 +11,7 @@ from order_data import (
     get_data_from_interactions,
 )
 from subgraph import get_licenses_data
-from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id
+from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id, MAX_TIMESTAMP_UTC
 from datetime import datetime
 import json
 
@@ -23,6 +23,8 @@ from app_types import (
     UserNodeData,
     Interaction,
 )
+
+from merklizer_interact import LicenseUptimeCalculator
 
 # from eth_utils import is_checksum_address, to_checksum_address
 
@@ -37,39 +39,38 @@ async def main():
     # address = "0xA2Ace3F96851B825af9dcca4b19d648742bBddC6"
     # address = "0xDf16f62824Ad0373DBb271FF7C3b81a6Ce119dEd"
 
-    # transfer_txs = await get_transfers(address)
-    # nodes_deposits_txs = transfer_txs["nodes"]
-    # refunds_txs = transfer_txs["refunds"]
+    transfer_txs = await get_transfers(address)
+    nodes_deposits_txs = transfer_txs["nodes"]
+    refunds_txs = transfer_txs["refunds"]
 
-    # user_node_data = await get_user_node_data(address, nodes_deposits_txs)
+    user_node_data = await get_user_node_data(address, nodes_deposits_txs)
 
-    # calculated_balances = calculate_end_balance_per_node(user_node_data)
+    calculated_balances = calculate_end_balance_per_node(user_node_data)
 
-    # total_balance = calculate_total_balance(
-    #     user_node_data, calculated_balances, refunds_txs
-    # )
+    total_balance = calculate_total_balance(
+        user_node_data, calculated_balances, refunds_txs
+    )
 
-    # print(f"Total balance END: {total_balance}")
-    # print("-" * 20)
+    licenses, tillers_created = get_data_from_interactions(user_node_data)
 
-    # licenses, tillers_created = get_data_from_interactions(user_node_data)
-
-    # print("- LICENSES:")
-    # print(sorted(licenses))
-    # print(f"tillers_created: {tillers_created}")
-
-    # Get all the Proposals/NodeFactoires with the Licenses from Subgraph
+    # # Get all the Proposals/NodeFactoires with the Licenses from Subgraph
     licenses_data = await get_licenses_data(address)
 
-    licenses = []  # FIXME: remove this line, only for debug
+    # licenses = []  # FIXME: remove this line, only for debug
     sg_licenses: set[int] = set(licenses)
+    sg_licenses: set[int] = set([])
 
-    # Get each license as unique item
+    # Get each license as unique item if not found from the previous steps
     for l_ in licenses_data:
         sg_licenses.add(int(l_["licenseId"]))
 
-    print("- SG LICENSES:")
-    print(sorted(sg_licenses))
+    for license_number in sg_licenses:
+        calculator = LicenseUptimeCalculator()
+
+        # Get data limited to August 1, 2025
+        data = calculator.get_license_uptime_report(
+            license_number, max_timestamp=MAX_TIMESTAMP_UTC
+        )
 
 
 if __name__ == "__main__":
