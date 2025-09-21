@@ -51,26 +51,20 @@ async def main():
         user_node_data, calculated_balances, refunds_txs
     )
 
-    licenses, tillers_created = get_data_from_interactions(user_node_data)
+    # licenses, tillers_created = get_data_from_interactions(user_node_data)
 
     # # Get all the Proposals/NodeFactoires with the Licenses from Subgraph
     licenses_data = await get_licenses_data(address)
 
-    # licenses = []  # FIXME: remove this line, only for debug
-    sg_licenses: set[int] = set(licenses)
-    sg_licenses: set[int] = set([])
+    calculator = LicenseUptimeCalculator()
 
-    # Get each license as unique item if not found from the previous steps
-    for l_ in licenses_data:
-        sg_licenses.add(int(l_["licenseId"]))
+    # Use the method we built
+    compensation_report = calculator.calculate_hts_compensation(licenses_data, address)
 
-    for license_number in sg_licenses:
-        calculator = LicenseUptimeCalculator()
-
-        # Get data limited to August 1, 2025
-        data = calculator.get_license_uptime_report(
-            license_number, max_timestamp=MAX_TIMESTAMP_UTC
-        )
+    print(
+        f"Final compensation for {address}: ${compensation_report['compensation_amount_usd']:.2f}"
+    )
+    print(f"Total balance remaining on HTS nodes: {total_balance / 1000000} $")
 
 
 if __name__ == "__main__":
