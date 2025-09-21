@@ -88,15 +88,37 @@ class LicenseUptimeCalculator:
                 if len(updates) < batch_size:
                     break
 
-                # If we have a timestamp limit and the oldest update in this batch
-                # is newer than our limit, we can stop (data is sorted newest first)
-                if (
-                    max_timestamp is not None
-                    and updates
-                    and min(update.get("ts", 0) for update in updates) > timestamp_limit
-                ):
-                    print(f"Reached timestamp limit. Stopping data collection.")
-                    break
+                # Check if we should continue based on timestamp filtering
+                if max_timestamp is not None and updates:
+                    min_ts_in_batch = min(update.get("ts", 0) for update in updates)
+                    max_ts_in_batch = max(update.get("ts", 0) for update in updates)
+
+                    # If ALL updates in this batch are newer than our limit,
+                    # continue to next batch to find older data (data is sorted oldest first)
+                    if min_ts_in_batch > timestamp_limit:
+                        print(
+                            f"Batch {skip//batch_size + 1}: All updates too recent, continuing to find older data..."
+                        )
+                        # Don't break - continue to find older historical data
+                        pass  # Continue to next iteration
+                    elif (
+                        len(filtered_updates) == 0
+                        and max_ts_in_batch <= timestamp_limit
+                    ):
+                        # All data in this batch is older than our limit, we're done
+                        print(
+                            f"Batch {skip//batch_size + 1}: All updates too old, stopping."
+                        )
+                        break
+                    elif (
+                        len(filtered_updates) < len(updates)
+                        and len(filtered_updates) > 0
+                    ):
+                        # Mixed batch - some data within limit, some outside - we found the boundary
+                        print(
+                            f"Batch {skip//batch_size + 1}: Found timestamp boundary, stopping."
+                        )
+                        break
 
                 skip += batch_size
 
@@ -132,6 +154,12 @@ class LicenseUptimeCalculator:
                     "update_count": 0,
                     "custom_start_used": True,
                     "gap_downtime": total_downtime,
+                    "time_range": {
+                        "start": custom_start_time,
+                        "end": end_time,
+                        "start_readable": time.ctime(custom_start_time),
+                        "end_readable": time.ctime(end_time),
+                    },
                 }
 
             return {
@@ -142,6 +170,12 @@ class LicenseUptimeCalculator:
                 "update_count": 0,
                 "custom_start_used": False,
                 "gap_downtime": 0,
+                "time_range": {
+                    "start": 0,
+                    "end": 0,
+                    "start_readable": time.ctime(0),
+                    "end_readable": time.ctime(0),
+                },
             }
 
         # Sort updates by timestamp to ensure proper order
@@ -294,7 +328,7 @@ class LicenseUptimeCalculator:
 
         print(f"all updates: {len(all_updates)}")
 
-        if not all_updates:
+        if not all_updates and not custom_start_time:
             print("No uptime data found for this license.")
             return {
                 "license": license_number,
