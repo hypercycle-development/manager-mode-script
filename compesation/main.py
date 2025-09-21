@@ -1,8 +1,11 @@
 import asyncio
 import time
+import json
+import os
+from datetime import datetime
+from typing import Dict, List
 from web3 import Web3
 from web3.exceptions import BlockNotFound, TransactionNotFound
-from typing import Literal
 from gist_addresses import fetch_gist_addresses
 from user_deposits import get_transfers, get_user_node_data
 from order_data import (
@@ -12,10 +15,6 @@ from order_data import (
 )
 from subgraph import get_licenses_data
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id, MAX_TIMESTAMP_UTC
-from datetime import datetime
-import json
-
-from typing import List, Dict, Any
 from app_types import (
     DepositResponse,
     GetTransferResponse,
@@ -23,48 +22,298 @@ from app_types import (
     UserNodeData,
     Interaction,
 )
-
 from merklizer_interact import LicenseUptimeCalculator
 
-# from eth_utils import is_checksum_address, to_checksum_address
 
-# TODO: At the end, should look for deposits after Jan 1, 2025 and count them as missing deposits for compensation (no multiplier for these)
+class HTSCompensationProcessor:
+    def __init__(self, cache_file: str = "hts_compensation_cache.json"):
+        self.cache_file = cache_file
+        self.results_cache = self.load_cache()
+
+    def load_cache(self) -> Dict:
+        """Load existing results from JSON cache file"""
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, "r") as f:
+                    cache = json.load(f)
+                    print(
+                        f"Loaded cache with {len(cache.get('processed_addresses', {}))} previously processed addresses"
+                    )
+                    return cache
+            except Exception as e:
+                print(f"Error loading cache: {e}")
+                return self._create_empty_cache()
+        else:
+            print("No cache file found, starting fresh")
+            return self._create_empty_cache()
+
+    def _create_empty_cache(self) -> Dict:
+        """Create empty cache structure"""
+        return {
+            "processed_addresses": {},
+            "total_compensation": 0.0,
+            "last_updated": None,
+            "processing_stats": {
+                "total_addresses": 0,
+                "successful": 0,
+                "errors": 0,
+                "skipped": 0,
+            },
+        }
+
+    def save_cache(self):
+        """Save current results to JSON cache file"""
+        self.results_cache["last_updated"] = datetime.now().isoformat()
+        try:
+            with open(self.cache_file, "w") as f:
+                json.dump(self.results_cache, f, indent=2)
+            print(f"Cache saved to {self.cache_file}")
+        except Exception as e:
+            print(f"Error saving cache: {e}")
+
+    def is_address_processed(self, address: str) -> bool:
+        """Check if address was already processed successfully"""
+        return address.lower() in self.results_cache["processed_addresses"]
+
+    def add_address_result(
+        self,
+        address: str,
+        compensation_amount: float,
+        total_balance: float,
+        error: str = None,
+        license_count: int = 0,
+        processing_time: float = 0,
+    ):
+        """Add address processing result to cache"""
+        self.results_cache["processed_addresses"][address.lower()] = {
+            "address": address,
+            "compensation_amount_usd": compensation_amount,
+            "total_balance_usdc": total_balance,
+            "license_count": license_count,
+            "processing_time_seconds": processing_time,
+            "processed_at": datetime.now().isoformat(),
+            "error": error,
+        }
+
+        # Update total compensation (only if no error)
+        if error is None:
+            self.recalculate_totals()
+
+        # Update stats
+        if error is None:
+            self.results_cache["processing_stats"]["successful"] += 1
+        else:
+            self.results_cache["processing_stats"]["errors"] += 1
+
+    def recalculate_totals(self):
+        """Recalculate total compensation from all successful entries"""
+        total = 0.0
+        for addr_data in self.results_cache["processed_addresses"].values():
+            if addr_data.get("error") is None:
+                total += addr_data.get("compensation_amount_usd", 0)
+        self.results_cache["total_compensation"] = total
+
+    async def process_address(self, address: str) -> Dict:
+        """Process a single address and return compensation data"""
+        start_time = time.time()
+
+        try:
+            print(f"\n{'='*60}")
+            print(f"Processing address: {address}")
+
+            # Get transfer data
+            transfer_txs = await get_transfers(address)
+            nodes_deposits_txs = transfer_txs["nodes"]
+            refunds_txs = transfer_txs["refunds"]
+
+            user_node_data = await get_user_node_data(address, nodes_deposits_txs)
+            calculated_balances = calculate_end_balance_per_node(user_node_data)
+            total_balance = calculate_total_balance(
+                user_node_data, calculated_balances, refunds_txs
+            )
+
+            # Get licenses from subgraph
+            licenses_data = await get_licenses_data(address)
+
+            if not licenses_data:
+                print(f"No licenses found for {address}")
+                return {
+                    "compensation_amount_usd": 0.0,
+                    "total_balance_usdc": total_balance / 1_000_000,
+                    "license_count": 0,
+                    "processing_time": time.time() - start_time,
+                    "error": None,
+                }
+
+            # Calculate HTS compensation
+            calculator = LicenseUptimeCalculator()
+            compensation_report = calculator.calculate_hts_compensation(
+                licenses_data, address
+            )
+
+            processing_time = time.time() - start_time
+
+            result = {
+                "compensation_amount_usd": compensation_report[
+                    "compensation_amount_usd"
+                ],
+                "total_balance_usdc": total_balance / 1_000_000,
+                "license_count": len(licenses_data),
+                "processing_time": processing_time,
+                "error": None,
+                "detailed_report": compensation_report,
+            }
+
+            print(f"✅ Address {address} processed successfully")
+            print(f"   Compensation: ${result['compensation_amount_usd']:.2f}")
+            print(f"   Balance: ${result['total_balance_usdc']:.2f}")
+            print(f"   Licenses: {result['license_count']}")
+            print(f"   Time: {processing_time:.1f}s")
+
+            return result
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            error_msg = f"Error processing {address}: {str(e)}"
+            print(f"❌ {error_msg}")
+
+            return {
+                "compensation_amount_usd": 0.0,
+                "total_balance_usdc": 0.0,
+                "license_count": 0,
+                "processing_time": processing_time,
+                "error": error_msg,
+            }
+
+    async def process_all_addresses(self, resume_from_cache: bool = True):
+        """Process all HTS Tranche1 addresses with caching"""
+
+        # Get all addresses
+        print("Fetching HTS Tranche1 addresses...")
+        t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
+
+        self.results_cache["processing_stats"]["total_addresses"] = len(t1_addresses)
+
+        print(f"\nFound {len(t1_addresses)} addresses to process")
+        if resume_from_cache:
+            already_processed = sum(
+                1 for addr in t1_addresses if self.is_address_processed(addr)
+            )
+            print(f"Already processed: {already_processed}")
+            print(f"Remaining: {len(t1_addresses) - already_processed}")
+
+        # Process each address
+        for i, address in enumerate(t1_addresses, 1):
+            print(f"\n[{i}/{len(t1_addresses)}] ", end="")
+
+            # Skip if already processed (unless resume_from_cache is False)
+            if resume_from_cache and self.is_address_processed(address):
+                print(f"Skipping {address} (already processed)")
+                self.results_cache["processing_stats"]["skipped"] += 1
+                continue
+
+            # Process the address
+            result = await self.process_address(address)
+
+            # Add to cache
+            self.add_address_result(
+                address=address,
+                compensation_amount=result["compensation_amount_usd"],
+                total_balance=result["total_balance_usdc"],
+                error=result["error"],
+                license_count=result["license_count"],
+                processing_time=result["processing_time"],
+            )
+
+            # Save cache every 10 addresses
+            if i % 10 == 0:
+                self.save_cache()
+                self.print_progress_summary()
+
+        # Final save
+        self.save_cache()
+        self.print_final_summary()
+
+    def print_progress_summary(self):
+        """Print current progress summary"""
+        stats = self.results_cache["processing_stats"]
+        print(f"\n--- PROGRESS SUMMARY ---")
+        print(f"Total addresses: {stats['total_addresses']}")
+        print(f"Successful: {stats['successful']}")
+        print(f"Errors: {stats['errors']}")
+        print(f"Skipped (cached): {stats['skipped']}")
+        print(
+            f"Current total compensation: ${self.results_cache['total_compensation']:.2f}"
+        )
+
+    def print_final_summary(self):
+        """Print final processing summary"""
+        stats = self.results_cache["processing_stats"]
+
+        print(f"\n{'='*60}")
+        print("FINAL HTS COMPENSATION SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total addresses processed: {stats['successful']}")
+        print(f"Addresses with errors: {stats['errors']}")
+        print(
+            f"Total compensation amount: ${self.results_cache['total_compensation']:.2f}"
+        )
+
+        # Top compensations
+        successful_addresses = [
+            data
+            for data in self.results_cache["processed_addresses"].values()
+            if data.get("error") is None and data.get("compensation_amount_usd", 0) > 0
+        ]
+
+        if successful_addresses:
+            top_compensations = sorted(
+                successful_addresses,
+                key=lambda x: x.get("compensation_amount_usd", 0),
+                reverse=True,
+            )[:10]
+
+            print(f"\nTop 10 compensations:")
+            for i, addr_data in enumerate(top_compensations, 1):
+                print(
+                    f"{i:2d}. {addr_data['address']}: ${addr_data['compensation_amount_usd']:.2f}"
+                )
+
+    def export_results(self, filename: str = None):
+        """Export results to a CSV file"""
+        if filename is None:
+            filename = f"hts_compensation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        import csv
+
+        with open(filename, "w", newline="") as csvfile:
+            fieldnames = [
+                "address",
+                "compensation_amount_usd",
+                "total_balance_usdc",
+                "license_count",
+                "processing_time_seconds",
+                "processed_at",
+                "error",
+            ]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for addr_data in self.results_cache["processed_addresses"].values():
+                writer.writerow(addr_data)
+
+        print(f"Results exported to {filename}")
 
 
 async def main():
-    # # Get all the HTS Tranche1 address
-    # t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
-    # address = "0x7b724C7cF60d4CEddAc00BE64f23E0c97C170182"
-    # address = "0x181615a6889e7cCD2DD4bf4375836351060704Db"
-    address = "0xA2Ace3F96851B825af9dcca4b19d648742bBddC6"
-    # address = "0xDf16f62824Ad0373DBb271FF7C3b81a6Ce119dEd"
+    """Main processing function"""
+    processor = HTSCompensationProcessor()
 
-    transfer_txs = await get_transfers(address)
-    nodes_deposits_txs = transfer_txs["nodes"]
-    refunds_txs = transfer_txs["refunds"]
+    # Process all addresses (will resume from cache by default)
+    await processor.process_all_addresses(resume_from_cache=True)
 
-    user_node_data = await get_user_node_data(address, nodes_deposits_txs)
-
-    calculated_balances = calculate_end_balance_per_node(user_node_data)
-
-    total_balance = calculate_total_balance(
-        user_node_data, calculated_balances, refunds_txs
-    )
-
-    # licenses, tillers_created = get_data_from_interactions(user_node_data)
-
-    # # Get all the Proposals/NodeFactoires with the Licenses from Subgraph
-    licenses_data = await get_licenses_data(address)
-
-    calculator = LicenseUptimeCalculator()
-
-    # Use the method we built
-    compensation_report = calculator.calculate_hts_compensation(licenses_data, address)
-
-    print(
-        f"Final compensation for {address}: ${compensation_report['compensation_amount_usd']:.2f}"
-    )
-    print(f"Total balance remaining on HTS nodes: {total_balance / 1000000} $")
+    # Export results to CSV
+    processor.export_results()
 
 
 if __name__ == "__main__":
