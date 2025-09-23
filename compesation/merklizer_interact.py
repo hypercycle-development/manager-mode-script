@@ -131,11 +131,7 @@ class LicenseUptimeCalculator:
                             f"Batch {skip//batch_size + 1}: All updates too old, stopping."
                         )
                         break
-                    elif (
-                        len(filtered_updates) < len(updates)
-                        and len(filtered_updates) > 0
-                    ):
-                        # Mixed batch - some data within limit, some outside - we found the boundary
+                    elif len(updates) == 0:
                         print(
                             f"Batch {skip//batch_size + 1}: Found timestamp boundary, stopping."
                         )
@@ -153,16 +149,18 @@ class LicenseUptimeCalculator:
                 print(f"Error processing response: {e}")
                 break
 
+        sorted_updates = sorted(all_updates, key=lambda x: x.get("ts", 0))
+
         # Save to cache
         try:
             with open(cache_file, "w") as f:
-                json.dump(all_updates, f, indent=2)
+                json.dump(sorted_updates, f, indent=2)
             print(f"Cached license uptime data for {license_number}")
         except Exception as e:
             print(f"Error saving license uptime cache for {license_number}: {e}")
 
         # Return it
-        return all_updates
+        return sorted_updates
 
     def calculate_uptime_metrics(
         self,
@@ -210,6 +208,13 @@ class LicenseUptimeCalculator:
 
         # Sort updates by timestamp to ensure proper order
         sorted_updates = sorted(updates, key=lambda x: x.get("ts", 0))
+
+        print(
+            f"The updates start[0] ({sorted_updates[0]['ts']}): {time.ctime(sorted_updates[0]['ts'])}"
+        )
+        print(
+            f"The updates start[last] ({sorted_updates[len(sorted_updates)-1]['ts']}): {time.ctime(sorted_updates[len(sorted_updates)-1]['ts'])}"
+        )
 
         # Determine the actual start time for calculations
         first_uptime_timestamp = sorted_updates[0].get("ts", 0)
@@ -440,9 +445,13 @@ class LicenseUptimeCalculator:
                 "messageChanged", []
             )
             if message_changes:
-                first_message_time = int(message_changes[0]["blockTimestamp"])
+                # first_message_time = int(message_changes[0]["blockTimestamp"])
+                first_message_time = int(
+                    message_changes[len(message_changes) - 1]["blockTimestamp"]
+                )
+                # f"First message timestamp: {first_message_time} ({time.ctime(first_message_time)})"
                 print(
-                    f"First message timestamp: {first_message_time} ({time.ctime(first_message_time)})"
+                    f"Last message timestamp: {first_message_time} ({time.ctime(first_message_time)})"
                 )
             else:
                 print("No message changes found for this license")
