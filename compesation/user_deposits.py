@@ -16,6 +16,9 @@ from app_types import (
     Interaction,
 )
 import asyncio
+import json
+import os
+from pathlib import Path
 
 
 async def get_user_deposits_node(node_url: str, user_address: str) -> DepositResponse:
@@ -182,11 +185,32 @@ async def get_all_hypc_transactions(
     return all_transactions
 
 
-async def get_transfers(user_address: str) -> GetTransferResponse:
+async def get_transfers(
+    user_address: str, cache_dir: str = "transfer_cache"
+) -> GetTransferResponse:
     """
     Find all USDC deposits from user_address to any HTS node
     And organize it between nodes and the type: To Node, Refund
     """
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+
+    # Normalize address for filename
+    normalized_address = user_address.lower()
+    cache_file = os.path.join(cache_dir, f"{normalized_address}.json")
+
+    # Check if cached data exists
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+            print(f"Loaded cached transfer data for {user_address}")
+            return GetTransferResponse(**cached_data)
+        except Exception as e:
+            print(f"Error loading cache for {user_address}: {e}")
+            print("Fetching fresh data...")
+
+    # Fetch fresh data if no cache or cache failed
     # Normalize addresses for comparison
     user_address = user_address.lower()
     node_addresses = {
@@ -226,6 +250,14 @@ async def get_transfers(user_address: str) -> GetTransferResponse:
                 results["refunds"] = []
 
             results["refunds"].append(TransferTx(**transaction))
+
+    # Save to cache
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"Cached transfer data for {user_address}")
+    except Exception as e:
+        print(f"Error saving cache for {user_address}: {e}")
 
     return results
 
