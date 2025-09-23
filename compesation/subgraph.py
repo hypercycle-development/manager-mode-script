@@ -1,7 +1,3 @@
-import argparse
-import asyncio
-import json
-import sys
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from eth_utils.address import to_checksum_address
@@ -9,6 +5,9 @@ from aiohttp import ClientSession, ClientError
 from typing import Optional, List, Dict, Any, Tuple
 from common import MAX_BLOCK_NUMBER
 from app_types import ProposalData
+import json
+import os
+from pathlib import Path
 
 # Subgraph endpoints
 SUBGRAPHS = {
@@ -73,7 +72,29 @@ def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER)
     """
 
 
-async def get_licenses_data(user_address: str) -> List[ProposalData]:
+async def get_licenses_data(
+    user_address: str, cache_dir: str = "licenses_data_cache"
+) -> List[ProposalData]:
+
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+
+    # Normalize address for filename
+    normalized_address = user_address.lower()
+    cache_file = os.path.join(cache_dir, f"{normalized_address}.json")
+
+    # Check if cached data exists
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+            print(f"Loaded cached licenses data for {user_address}")
+            return cached_data
+        except Exception as e:
+            print(f"Error loading cache for {user_address}: {e}")
+            print("Fetching fresh data...")
+
+    # Fetch fresh data if no cache or cache failed
     query = build_query_for_licenses(user_address)
 
     async with ClientSession() as session:
@@ -86,4 +107,15 @@ async def get_licenses_data(user_address: str) -> List[ProposalData]:
         if not res or res.get("data", None) is None:
             raise RuntimeError("Not valid subgrah response")
 
-        return res["data"]["shareProposalDatas"]
+        # Results
+        results = res["data"]["shareProposalDatas"]
+
+        # Save to cache
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(results, f, indent=2)
+            print(f"Cached user licenses data for {user_address}")
+        except Exception as e:
+            print(f"Error saving user licenses cache for {user_address}: {e}")
+
+        return results
