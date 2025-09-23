@@ -5,6 +5,9 @@ from typing import Dict, List, Optional, Tuple
 
 import time
 from typing import Dict, List, Optional, Tuple
+import json
+import os
+from pathlib import Path
 
 
 class LicenseUptimeCalculator:
@@ -17,6 +20,7 @@ class LicenseUptimeCalculator:
         license_number: int,
         batch_size: int = 5000,
         max_timestamp: Optional[int] = None,
+        cache_dir: str = "license_uptime_cache",
     ) -> List[Dict]:
         """
         Retrieve all uptime data for a license by making multiple requests.
@@ -27,6 +31,23 @@ class LicenseUptimeCalculator:
             max_timestamp: Optional timestamp limit. If None, gets all data until today.
                          If provided, filters out updates newer than this timestamp.
         """
+        # Create cache directory if it doesn't exist
+        Path(cache_dir).mkdir(exist_ok=True)
+
+        # Get the cache filename
+        cache_file = os.path.join(cache_dir, f"{license_number}.json")
+
+        # Check if cached data exists
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r") as f:
+                    cached_data = json.load(f)
+                print(f"Loaded cached license uptime data for {license_number}")
+                return cached_data
+            except Exception as e:
+                print(f"Error loading cache for license uptime {license_number}: {e}")
+                print("Fetching fresh data...")
+
         all_updates = []
         skip = 0
 
@@ -132,6 +153,15 @@ class LicenseUptimeCalculator:
                 print(f"Error processing response: {e}")
                 break
 
+        # Save to cache
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(all_updates, f, indent=2)
+            print(f"Cached license uptime data for {license_number}")
+        except Exception as e:
+            print(f"Error saving license uptime cache for {license_number}: {e}")
+
+        # Return it
         return all_updates
 
     def calculate_uptime_metrics(
@@ -426,7 +456,6 @@ class LicenseUptimeCalculator:
 
                 if "error" not in report:
                     downtime_seconds = report["summary"]["down_time"]
-                    print(f"XD_{i}: {downtime_seconds}")
                     downtime_hours = downtime_seconds / 3600
                     total_wallet_downtime_hours += downtime_hours
 
