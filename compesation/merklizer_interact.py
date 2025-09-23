@@ -1,4 +1,4 @@
-from common import MAX_TIMESTAMP_UTC, MERKLIZER_URL
+from common import MAX_TIMESTAMP_UTC, MERKLIZER_URL, seconds_to_months
 import requests
 import time
 from typing import Dict, List, Optional, Tuple
@@ -426,6 +426,7 @@ class LicenseUptimeCalculator:
             print(f"Wallet: {wallet_address}")
         print(f"Processing {len(licenses_data)} licenses...")
 
+        total_wallet_downtime_seconds = 0
         total_wallet_downtime_hours = 0
         license_reports = []
 
@@ -457,11 +458,13 @@ class LicenseUptimeCalculator:
                 if "error" not in report:
                     downtime_seconds = report["summary"]["down_time"]
                     downtime_hours = downtime_seconds / 3600
+                    total_wallet_downtime_seconds += downtime_seconds
                     total_wallet_downtime_hours += downtime_hours
 
                     license_reports.append(
                         {
                             "license_id": license_id,
+                            "downtime_seconds": downtime_seconds,
                             "downtime_hours": downtime_hours,
                             "uptime_hours": report["summary"]["up_time"] / 3600,
                             "total_hours": report["summary"]["total_time"] / 3600,
@@ -477,6 +480,7 @@ class LicenseUptimeCalculator:
                         }
                     )
 
+                    print(f"License {license_id} downtime: {downtime_seconds} seconds")
                     print(f"License {license_id} downtime: {downtime_hours:.2f} hours")
                 else:
                     print(
@@ -485,6 +489,7 @@ class LicenseUptimeCalculator:
                     license_reports.append(
                         {
                             "license_id": license_id,
+                            "downtime_seconds": 0,
                             "downtime_hours": 0,
                             "error": report.get("error", "Unknown error"),
                         }
@@ -493,35 +498,32 @@ class LicenseUptimeCalculator:
             except Exception as e:
                 print(f"Exception processing license {license_id}: {e}")
                 license_reports.append(
-                    {"license_id": license_id, "downtime_hours": 0, "error": str(e)}
+                    {
+                        "license_id": license_id,
+                        "downtime_hours": 0,
+                        "downtime_seconds": 0,
+                        "error": str(e),
+                    }
                 )
 
         # Apply compensation formula
         print(f"\n=== COMPENSATION CALCULATION ===")
         print(
+            f"Total downtime across all licenses: {total_wallet_downtime_seconds} seconds"
+        )
+        print(
             f"Total downtime across all licenses: {total_wallet_downtime_hours:.2f} hours"
         )
 
-        # Multiply by 5 as per formula
-        total_compensated_downtime_hours = total_wallet_downtime_hours * 5
-        print(
-            f"Compensated downtime (×5): {total_compensated_downtime_hours:.2f} hours"
-        )
+        # After formula: cast_to_month(total_downtime * 5) * 5$
+        compensation_amount = seconds_to_months(total_wallet_downtime_seconds * 5) * 5
 
-        # Convert to months (24 hours/day × 30 days/month = 720 hours/month)
-        downtime_months = int(total_compensated_downtime_hours / (24 * 30))
-        print(f"Downtime in months: {downtime_months:.4f} months")
-
-        # Multiply by $5 per month
-        compensation_amount = downtime_months * 5
         print(f"Compensation amount: ${compensation_amount:.2f}")
 
         return {
             "wallet_address": wallet_address,
             "total_licenses_processed": len(licenses_data),
             "total_downtime_hours": total_wallet_downtime_hours,
-            "compensated_downtime_hours": total_compensated_downtime_hours,
-            "downtime_months": downtime_months,
             "compensation_amount_usd": compensation_amount,
             "license_reports": license_reports,
             "max_timestamp_used": self.MAX_TIMESTAMP_UTC,
