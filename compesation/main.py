@@ -3,7 +3,7 @@ import time
 import json
 import os
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Union
 from web3 import Web3
 from web3.exceptions import BlockNotFound, TransactionNotFound
 from gist_addresses import fetch_gist_addresses
@@ -113,7 +113,7 @@ class HTSCompensationProcessor:
                 total += addr_data.get("compensation_amount_usd", 0)
         self.results_cache["total_compensation"] = total
 
-    async def process_address(self, address: str) -> Dict:
+    async def process_address(self, address: str) -> Union[Dict, None]:
         """Process a single address and return compensation data"""
         start_time = time.time()
 
@@ -128,9 +128,11 @@ class HTSCompensationProcessor:
 
             user_node_data = await get_user_node_data(address, nodes_deposits_txs)
             calculated_balances = calculate_end_balance_per_node(user_node_data)
+            print(f"calculated_balances: {calculated_balances}")
             total_balance = calculate_total_balance(
                 user_node_data, calculated_balances, refunds_txs
             )
+            print(f"total_balance: {total_balance}")
 
             # Get licenses from subgraph
             licenses_data = await get_licenses_data(address)
@@ -176,6 +178,7 @@ class HTSCompensationProcessor:
             processing_time = time.time() - start_time
             error_msg = f"Error processing {address}: {str(e)}"
             print(f"❌ {error_msg}")
+            return None
 
             return {
                 "compensation_amount_usd": 0.0,
@@ -191,6 +194,8 @@ class HTSCompensationProcessor:
         # Get all addresses
         print("Fetching HTS Tranche1 addresses...")
         t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
+        
+        # t1_addresses = [t1_addresses[0]]
 
         self.results_cache["processing_stats"]["total_addresses"] = len(t1_addresses)
 
@@ -214,16 +219,17 @@ class HTSCompensationProcessor:
 
             # Process the address
             result = await self.process_address(address)
-
-            # Add to cache
-            self.add_address_result(
-                address=address,
-                compensation_amount=result["compensation_amount_usd"],
-                total_balance=result["total_balance_usdc"],
-                error=result["error"],
-                license_count=result["license_count"],
-                processing_time=result["processing_time"],
-            )
+            
+            if result is not None:
+                # Add to cache
+                self.add_address_result(
+                    address=address,
+                    compensation_amount=result["compensation_amount_usd"],
+                    total_balance=result["total_balance_usdc"],
+                    error=result["error"],
+                    license_count=result["license_count"],
+                    processing_time=result["processing_time"],
+                )
 
             # Save cache every 10 addresses
             if i % 10 == 0:

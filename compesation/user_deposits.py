@@ -48,6 +48,7 @@ async def get_user_balance_node(
 
         except (ClientError, asyncio.TimeoutError) as e:
             print(f"Error fetching balance from {node_url}: {e}")
+            raise Exception(f"No response: {e}")
             return None
 
 
