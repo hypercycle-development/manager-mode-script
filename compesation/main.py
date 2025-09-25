@@ -54,6 +54,7 @@ class HTSCompensationProcessor:
         return {
             "processed_addresses": {},
             "total_compensation": 0.0,
+            "total_balance_to_hms": 0.0,
             "last_updated": None,
             "processing_stats": {
                 "total_addresses": 0,
@@ -82,6 +83,7 @@ class HTSCompensationProcessor:
         address: str,
         compensation_amount: float,
         total_balance: float,
+        final_balance: str,
         error: str = None,
         license_count: int = 0,
         processing_time: float = 0,
@@ -90,7 +92,8 @@ class HTSCompensationProcessor:
         self.results_cache["processed_addresses"][address.lower()] = {
             "address": address,
             "compensation_amount_usd": compensation_amount,
-            "total_balance_usdc": total_balance,
+            "total_balance_usdc": str(total_balance),
+            "final_balance": str(final_balance),
             "license_count": license_count,
             "processing_time_seconds": processing_time,
             "processed_at": datetime.now().isoformat(),
@@ -155,7 +158,6 @@ class HTSCompensationProcessor:
                 print(f"No licenses found for {address}")
                 return {
                     "compensation_amount_usd": 0.0,
-                    # "total_balance_usdc": total_balance / 1_000_000,
                     "total_balance_usdc": total_balance_real / 1_000_000,
                     "final_balance": total_balance_real / 1_000_000,
                     "license_count": 0,
@@ -175,7 +177,6 @@ class HTSCompensationProcessor:
                 "compensation_amount_usd": compensation_report[
                     "compensation_amount_usd"
                 ],
-                # "total_balance_usdc": total_balance / 1_000_000,
                 "total_balance_usdc": total_balance_real / 1_000_000,
                 # The compensation calculated (using ERC20 with 6 decimals). Mainly because the Node balances comes like that
                 "final_balance": (
@@ -254,6 +255,7 @@ class HTSCompensationProcessor:
                     address=address,
                     compensation_amount=result["compensation_amount_usd"],
                     total_balance=result["total_balance_usdc"],
+                    final_balance=result["final_balance"],
                     error=result["error"],
                     license_count=result["license_count"],
                     processing_time=result["processing_time"],
@@ -325,6 +327,7 @@ class HTSCompensationProcessor:
                 "address",
                 "compensation_amount_usd",
                 "total_balance_usdc",
+                "final_balance",
                 "license_count",
                 "processing_time_seconds",
                 "processed_at",
