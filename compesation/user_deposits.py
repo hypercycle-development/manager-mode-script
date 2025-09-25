@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 import hashlib
 
+
 async def get_user_deposits_node(node_url: str, user_address: str) -> DepositResponse:
     async with ClientSession() as session:
         try:
@@ -42,10 +43,12 @@ async def get_user_balance_node(
 ) -> Dict[str, int]:
     # Normalize address for filename
     normalized_address = user_address.lower()
-    
+
     # node_url_filename = str(hash(node_url.lower()))
-    node_url_filename = hashlib.sha256(node_url.encode('utf-8')).hexdigest()
-    cache_file = os.path.join(cache_dir, f"{normalized_address}_{node_url_filename}.json")
+    node_url_filename = hashlib.sha256(node_url.encode("utf-8")).hexdigest()
+    cache_file = os.path.join(
+        cache_dir, f"{normalized_address}_{node_url_filename}.json"
+    )
 
     # Check if cached data exists
     if os.path.exists(cache_file):
@@ -83,10 +86,35 @@ async def get_user_balance_node(
             raise Exception(f"No response: {e}")
 
 
-async def get_user_interactions(node_url: str, user_address: str) -> List[Interaction]:
+async def get_user_interactions(
+    node_url: str,
+    user_address: str,
+    cache_dir: str = "user_interactions_node_data_cache",
+) -> List[Interaction]:
     all_interactions = []
     page = 1
     page_size = 100
+
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+
+    # Normalize address for filename
+    normalized_address = user_address.lower()
+    node_url_filename = hashlib.sha256(node_url.encode("utf-8")).hexdigest()
+    cache_file = os.path.join(
+        cache_dir, f"{normalized_address}_{node_url_filename}.json"
+    )
+
+    # Check if cached data exists
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+            print(f"Loaded cached interactions data for {user_address}")
+            return cached_data
+        except Exception as e:
+            print(f"Error loading cache for {user_address} interactions: {e}")
+            print("Fetching fresh data...")
 
     async with ClientSession() as session:
         while page <= 10:
@@ -114,7 +142,17 @@ async def get_user_interactions(node_url: str, user_address: str) -> List[Intera
             page += 1
             await asyncio.sleep(0.2)
 
-    return sorted(all_interactions, key=lambda x: x["timestamp"])
+    results = sorted(all_interactions, key=lambda x: x["timestamp"])
+
+    # Save to cache
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"Cached user interactions data for {user_address}")
+    except Exception as e:
+        print(f"Error saving user interactions cache for {user_address}: {e}")
+
+    return results
 
 
 async def get_all_usdc_transactions(
