@@ -21,6 +21,26 @@ def get_remaining_as_usdc(
     return int((remaining_hypc * cost_in_usd) / cost_in_hypc)
 
 
+def calculate_end_balance_by_node_real(
+    data: Dict[str, UserNodeData],
+) -> Dict[str, EndBalanceResponse]:
+    result = {}
+
+    for node_name, user_data in data.items():
+        # Open a new entry for this node
+        result[node_name] = {
+            "HyPC": user_data.get("user_balance", {}).get("HyPC", 0),
+            "USDC": user_data.get("user_balance", {}).get("USDC", 0),
+        }
+
+        for unregistered_deposit in user_data.get("unregistered_deposits", []):
+            result[node_name][
+                unregistered_deposit["tokenSymbol"]
+            ] += unregistered_deposit["value"]
+
+    return result
+
+
 def calculate_end_balance_per_node(
     data: Dict[str, UserNodeData],
 ) -> Dict[str, EndBalanceResponse]:
@@ -106,6 +126,24 @@ def calculate_end_balance_per_node(
                     )
 
     return result
+
+
+def calculate_total_balance_real(
+    calculated_balances: Dict[str, EndBalanceResponse],
+    refunds_txs: List[TransferTx],
+):
+    # Sum all the balances into just one. We only will take care of the USDC.
+    total_balance = 0
+
+    for node_name in calculated_balances:
+        user_calculated_balance = calculated_balances[node_name]["USDC"]
+        total_balance += user_calculated_balance
+
+    for refunds in refunds_txs:
+        if refunds["tokenSymbol"] == "USDC":
+            total_balance -= int(refunds["value"])
+
+    return total_balance
 
 
 def calculate_total_balance(
