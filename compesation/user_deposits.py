@@ -76,6 +76,9 @@ async def get_user_balance_node(
     user_address: str,
     cache_dir: str = "user_node_balance_cache",
 ) -> Dict[str, int]:
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+
     # Normalize address for filename
     normalized_address = user_address.lower()
 
@@ -412,6 +415,5 @@ async def get_user_node_data(
 
             results[node_name]["registered_deposits"] = recorded_transactions
             results[node_name]["unregistered_deposits"] = unrecorded_transactions
-
 
     return results
