@@ -11,6 +11,8 @@ from user_deposits import get_transfers, get_user_node_data
 from order_data import (
     calculate_end_balance_per_node,
     calculate_total_balance,
+    calculate_end_balance_by_node_real,
+    calculate_total_balance_real,
     get_data_from_interactions,
 )
 from subgraph import get_licenses_data
@@ -126,13 +128,25 @@ class HTSCompensationProcessor:
             nodes_deposits_txs = transfer_txs["nodes"]
             refunds_txs = transfer_txs["refunds"]
 
+            # User node data
             user_node_data = await get_user_node_data(address, nodes_deposits_txs)
-            calculated_balances = calculate_end_balance_per_node(user_node_data)
-            print(f"calculated_balances: {calculated_balances}")
-            total_balance = calculate_total_balance(
-                user_node_data, calculated_balances, refunds_txs
+
+            # # Old calculated
+            # calculated_balances = calculate_end_balance_per_node(user_node_data)
+            # print(f"calculated_balances: {calculated_balances}")
+
+            # total_balance = calculate_total_balance(
+            #     user_node_data, calculated_balances, refunds_txs
+            # )
+            # print(f"total_balance: {total_balance}")
+
+            # New calculated
+            real_end_balances = calculate_end_balance_by_node_real(user_node_data)
+            print(f"real_end_balances: {real_end_balances}")
+            total_balance_real = calculate_total_balance_real(
+                real_end_balances, refunds_txs
             )
-            print(f"total_balance: {total_balance}")
+            print(f"total_balance_real: {total_balance_real}")
 
             # Get licenses from subgraph
             licenses_data = await get_licenses_data(address)
@@ -141,7 +155,9 @@ class HTSCompensationProcessor:
                 print(f"No licenses found for {address}")
                 return {
                     "compensation_amount_usd": 0.0,
-                    "total_balance_usdc": total_balance / 1_000_000,
+                    # "total_balance_usdc": total_balance / 1_000_000,
+                    "total_balance_usdc": total_balance_real / 1_000_000,
+                    "final_balance": total_balance_real / 1_000_000,
                     "license_count": 0,
                     "processing_time": time.time() - start_time,
                     "error": None,
@@ -159,7 +175,14 @@ class HTSCompensationProcessor:
                 "compensation_amount_usd": compensation_report[
                     "compensation_amount_usd"
                 ],
-                "total_balance_usdc": total_balance / 1_000_000,
+                # "total_balance_usdc": total_balance / 1_000_000,
+                "total_balance_usdc": total_balance_real / 1_000_000,
+                # The compensation calculated (using ERC20 with 6 decimals). Mainly because the Node balances comes like that
+                "final_balance": (
+                    total_balance_real
+                    + compensation_report["compensation_amount_usd"] * 1_000_000
+                )
+                / 1_000_000,
                 "license_count": len(licenses_data),
                 "processing_time": processing_time,
                 "error": None,
@@ -168,7 +191,8 @@ class HTSCompensationProcessor:
 
             print(f"✅ Address {address} processed successfully")
             print(f"   Compensation: ${result['compensation_amount_usd']:.2f}")
-            print(f"   Balance: ${result['total_balance_usdc']:.2f}")
+            print(f"   Balance (all nodes): ${result['total_balance_usdc']:.2f}")
+            print(f"   Final balance (to HMS): ${result['final_balance']:.2f}")
             print(f"   Licenses: {result['license_count']}")
             print(f"   Time: {processing_time:.1f}s")
 
@@ -177,6 +201,9 @@ class HTSCompensationProcessor:
         except Exception as e:
             processing_time = time.time() - start_time
             error_msg = f"Error processing {address}: {str(e)}"
+            import traceback
+
+            traceback.print_exc()
             print(f"❌ {error_msg}")
             return None
 
@@ -194,8 +221,9 @@ class HTSCompensationProcessor:
         # Get all addresses
         print("Fetching HTS Tranche1 addresses...")
         t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
-        
+
         # t1_addresses = [t1_addresses[0]]
+        # t1_addresses = ["0x029e40e8d0c181BA7445B2c27060386e45A63F85"]
 
         self.results_cache["processing_stats"]["total_addresses"] = len(t1_addresses)
 
@@ -219,7 +247,7 @@ class HTSCompensationProcessor:
 
             # Process the address
             result = await self.process_address(address)
-            
+
             if result is not None:
                 # Add to cache
                 self.add_address_result(
