@@ -36,7 +36,7 @@ def calculate_end_balance_by_node_real(
         for unregistered_deposit in user_data.get("unregistered_deposits", []):
             result[node_name][
                 unregistered_deposit["tokenSymbol"]
-            ] += unregistered_deposit["value"]
+            ] += int(unregistered_deposit["value"])
 
     return result
 
