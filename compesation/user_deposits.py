@@ -370,27 +370,7 @@ async def get_transfers(
 async def get_user_node_data(
     user_address: str,
     transfers: Dict[str, List[TransferTx]],
-    cache_dir: str = "user_node_cache",
 ) -> Dict[str, UserNodeData]:
-    # Create cache directory if it doesn't exist
-    Path(cache_dir).mkdir(exist_ok=True)
-
-    # Normalize address for filename
-    normalized_address = user_address.lower()
-    cache_file = os.path.join(cache_dir, f"{normalized_address}.json")
-
-    # Check if cached data exists
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, "r") as f:
-                cached_data = json.load(f)
-            print(f"Loaded cached user node data for {user_address}")
-            return cached_data
-        except Exception as e:
-            print(f"Error loading user node cache for {user_address}: {e}")
-            print("Fetching fresh user node data...")
-
-    # Fetch fresh data if no cache or cache failed
     results = {}
 
     for node_name, transactions in sorted(transfers.items()):
@@ -407,7 +387,6 @@ async def get_user_node_data(
         # Get user interactions on the node
         user_interactions = await get_user_interactions(node_url, user_address)
         results[node_name]["user_interactions"] = user_interactions
-
         # Get the user deposits
         user_deposits = await get_user_deposits_node(node_url, user_address)
 
@@ -434,12 +413,5 @@ async def get_user_node_data(
             results[node_name]["registered_deposits"] = recorded_transactions
             results[node_name]["unregistered_deposits"] = unrecorded_transactions
 
-    # Save to cache
-    try:
-        with open(cache_file, "w") as f:
-            json.dump(results, f, indent=2)
-        print(f"Cached user node data for {user_address}")
-    except Exception as e:
-        print(f"Error saving user node cache for {user_address}: {e}")
 
     return results
