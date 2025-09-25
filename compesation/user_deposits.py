@@ -19,7 +19,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-
+import hashlib
 
 async def get_user_deposits_node(node_url: str, user_address: str) -> DepositResponse:
     async with ClientSession() as session:
@@ -36,20 +36,51 @@ async def get_user_deposits_node(node_url: str, user_address: str) -> DepositRes
 
 
 async def get_user_balance_node(
-    node_url: str, user_address: str
-) -> Dict[str, int] | None:
+    node_url: str,
+    user_address: str,
+    cache_dir: str = "user_node_balance_cache",
+) -> Dict[str, int]:
+    # Normalize address for filename
+    normalized_address = user_address.lower()
+    
+    # node_url_filename = str(hash(node_url.lower()))
+    node_url_filename = hashlib.sha256(node_url.encode('utf-8')).hexdigest()
+    cache_file = os.path.join(cache_dir, f"{normalized_address}_{node_url_filename}.json")
+
+    # Check if cached data exists
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+            print(f"Loaded cached user node balance for {user_address}")
+            return cached_data
+        except Exception as e:
+            print(f"Error loading user node balance cache for {user_address}: {e}")
+            print("Fetching fresh user node balance...")
+
     async with ClientSession() as session:
         try:
             async with session.get(f"{node_url}/balances", timeout=30) as response:
                 response.raise_for_status()
                 data = await response.json()
 
-                return data.get("users_balance", {}).get(user_address, None)
+                results = data.get("users_balance", {}).get(user_address, {})
+
+                # Save to cache
+                try:
+                    with open(cache_file, "w") as f:
+                        json.dump(results, f, indent=2)
+                    print(f"Cached user node balance data for {user_address}")
+                except Exception as e:
+                    print(
+                        f"Error saving user node balance cache for {user_address}: {e}"
+                    )
+
+                return results
 
         except (ClientError, asyncio.TimeoutError) as e:
             print(f"Error fetching balance from {node_url}: {e}")
             raise Exception(f"No response: {e}")
-            return None
 
 
 async def get_user_interactions(node_url: str, user_address: str) -> List[Interaction]:
