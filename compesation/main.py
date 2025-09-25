@@ -277,7 +277,7 @@ class HTSCompensationProcessor:
                 successful_addresses,
                 key=lambda x: x.get("compensation_amount_usd", 0),
                 reverse=True,
-            )[:10]
+            )[:50]
 
             print(f"\nTop 10 compensations:")
             for i, addr_data in enumerate(top_compensations, 1):
