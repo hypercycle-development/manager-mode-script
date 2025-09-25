@@ -83,7 +83,7 @@ class HTSCompensationProcessor:
         address: str,
         compensation_amount: float,
         total_balance: float,
-        final_balance: str,
+        final_balance: float,
         error: str = None,
         license_count: int = 0,
         processing_time: float = 0,
@@ -162,7 +162,7 @@ class HTSCompensationProcessor:
                 return {
                     "compensation_amount_usd": 0.0,
                     "total_balance_usdc": total_balance_real / 1_000_000,
-                    "final_balance": total_balance_real / 1_000_000,
+                    "final_balance": (total_balance_real * 1.5) / 1_000_000,
                     "license_count": 0,
                     "processing_time": time.time() - start_time,
                     "error": None,
@@ -183,8 +183,11 @@ class HTSCompensationProcessor:
                 "total_balance_usdc": total_balance_real / 1_000_000,
                 # The compensation calculated (using ERC20 with 6 decimals). Mainly because the Node balances comes like that
                 "final_balance": (
-                    total_balance_real
-                    + compensation_report["compensation_amount_usd"] * 1_000_000
+                    (
+                        total_balance_real
+                        + compensation_report["compensation_amount_usd"] * 1_000_000
+                    )
+                    * 1.5
                 )
                 / 1_000_000,
                 "license_count": len(licenses_data),
