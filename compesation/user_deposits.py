@@ -22,7 +22,32 @@ from pathlib import Path
 import hashlib
 
 
-async def get_user_deposits_node(node_url: str, user_address: str) -> DepositResponse:
+async def get_user_deposits_node(
+    node_url: str,
+    user_address: str,
+    cache_dir: str = "user_deposits_node_data_cache",
+) -> DepositResponse:
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+
+    # Normalize address for filename
+    normalized_address = user_address.lower()
+    node_url_filename = hashlib.sha256(node_url.encode("utf-8")).hexdigest()
+    cache_file = os.path.join(
+        cache_dir, f"{normalized_address}_{node_url_filename}.json"
+    )
+
+    # Check if cached data exists
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+            print(f"Loaded cached deposits data for {user_address}")
+            return cached_data
+        except Exception as e:
+            print(f"Error loading cache for {user_address} deposits: {e}")
+            print("Fetching fresh data...")
+
     async with ClientSession() as session:
         try:
             # It's very unlikely to have more than 100 deposits (atm)
@@ -30,7 +55,17 @@ async def get_user_deposits_node(node_url: str, user_address: str) -> DepositRes
                 f"{node_url}/deposits?sender={user_address}&page_size=100", timeout=30
             ) as response:
                 response.raise_for_status()
-                return await response.json()
+                results = await response.json()
+
+                # Save to cache
+                try:
+                    with open(cache_file, "w") as f:
+                        json.dump(results, f, indent=2)
+                    print(f"Cached user deposits data for {user_address}")
+                except Exception as e:
+                    print(f"Error saving user deposits cache for {user_address}: {e}")
+
+                return results
         except (ClientError, asyncio.TimeoutError) as e:
             print(f"Error fetching node data from {node_url}: {e}")
             return DepositResponse(data=[], total_count=0)
