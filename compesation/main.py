@@ -113,10 +113,13 @@ class HTSCompensationProcessor:
     def recalculate_totals(self):
         """Recalculate total compensation from all successful entries"""
         total = 0.0
+        total_hms = 0.0
         for addr_data in self.results_cache["processed_addresses"].values():
             if addr_data.get("error") is None:
                 total += addr_data.get("compensation_amount_usd", 0)
+                total_hms += float(addr_data.get("final_balance", 0))
         self.results_cache["total_compensation"] = total
+        self.results_cache["total_balance_to_hms"] = total_hms
 
     async def process_address(self, address: str) -> Union[Dict, None]:
         """Process a single address and return compensation data"""
@@ -281,6 +284,9 @@ class HTSCompensationProcessor:
         print(
             f"Current total compensation: ${self.results_cache['total_compensation']:.2f}"
         )
+        print(
+            f"Current total to HMS: ${self.results_cache['total_balance_to_hms']:.2f}"
+        )
 
     def print_final_summary(self):
         """Print final processing summary"""
@@ -293,6 +299,9 @@ class HTSCompensationProcessor:
         print(f"Addresses with errors: {stats['errors']}")
         print(
             f"Total compensation amount: ${self.results_cache['total_compensation']:.2f}"
+        )
+        print(
+            f"Current total to HMS: ${self.results_cache['total_balance_to_hms']:.2f}"
         )
 
         # Top compensations
