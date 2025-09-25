@@ -440,28 +440,33 @@ class LicenseUptimeCalculator:
             print(f"\n--- License {i+1}/{len(licenses_data)}: {license_id} ---")
 
             # Get first message timestamp (if exists)
-            first_message_time = None
+            # first_message_time = None
+            
+            # Get last message timestamp (if exists)
+            last_message_time = None
             message_changes = license_data.get("shareToken", {}).get(
                 "messageChanged", []
             )
             if message_changes:
                 # first_message_time = int(message_changes[0]["blockTimestamp"])
-                first_message_time = int(
+                # print(f"First message timestamp: {first_message_time} ({time.ctime(first_message_time)})")
+                
+                last_message_time = int(
                     message_changes[len(message_changes) - 1]["blockTimestamp"]
                 )
-                # f"First message timestamp: {first_message_time} ({time.ctime(first_message_time)})"
                 print(
-                    f"Last message timestamp: {first_message_time} ({time.ctime(first_message_time)})"
+                    f"Last message timestamp: {last_message_time} ({time.ctime(last_message_time)})"
                 )
             else:
                 print("No message changes found for this license")
+            # print("No message will be handled")
 
             # Get uptime report with custom start time
             try:
                 report = self.get_license_uptime_report(
                     license_id,
                     max_timestamp=self.MAX_TIMESTAMP_UTC,
-                    custom_start_time=first_message_time,
+                    custom_start_time=last_message_time,
                 )
 
                 if "error" not in report:
@@ -485,7 +490,7 @@ class LicenseUptimeCalculator:
                                 "gap_downtime", 0
                             )
                             / 3600,
-                            "first_message_time": first_message_time,
+                            "first_message_time": last_message_time,
                         }
                     )
 
