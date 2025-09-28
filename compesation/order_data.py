@@ -143,7 +143,7 @@ def calculate_total_balance_real(
         if refunds["tokenSymbol"] == "USDC":
             total_balance -= int(refunds["value"])
 
-    return total_balance
+    return max(total_balance, 0)
 
 
 def calculate_total_balance(
