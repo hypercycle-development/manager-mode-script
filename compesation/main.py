@@ -92,8 +92,8 @@ class HTSCompensationProcessor:
         self.results_cache["processed_addresses"][address.lower()] = {
             "address": address,
             "compensation_amount_usd": compensation_amount,
-            "total_balance_usdc": str(total_balance),
-            "final_balance": str(final_balance),
+            "total_balance_usdc": total_balance,
+            "final_balance": round(final_balance, 2),
             "license_count": license_count,
             "processing_time_seconds": processing_time,
             "processed_at": datetime.now().isoformat(),
@@ -117,7 +117,7 @@ class HTSCompensationProcessor:
         for addr_data in self.results_cache["processed_addresses"].values():
             if addr_data.get("error") is None:
                 total += addr_data.get("compensation_amount_usd", 0)
-                total_hms += float(addr_data.get("final_balance", 0))
+                total_hms += addr_data.get("final_balance", 0)
         self.results_cache["total_compensation"] = total
         self.results_cache["total_balance_to_hms"] = total_hms
 
@@ -184,10 +184,9 @@ class HTSCompensationProcessor:
                 # The compensation calculated (using ERC20 with 6 decimals). Mainly because the Node balances comes like that
                 "final_balance": (
                     (
-                        total_balance_real
+                        total_balance_real * 1.5
                         + compensation_report["compensation_amount_usd"] * 1_000_000
                     )
-                    * 1.5
                 )
                 / 1_000_000,
                 "license_count": len(licenses_data),
@@ -228,6 +227,19 @@ class HTSCompensationProcessor:
         # Get all addresses
         print("Fetching HTS Tranche1 addresses...")
         t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
+        # t1_addresses = [
+        #     "0x4da687250556cBD563459E422477dB2b0779A123",
+        #     # "0xa4868fdF30EF3aBa7Ccc2EE0dEEe128fC4f4798B",
+        #     # "0x3fD7Df71ec4482457d80D546Ba6f943302D8181B",
+        #     # "0x2B8604c98b8c4Ae226c92C8375893CE35f7e437C",
+        #     # "0xb7131B4158E597C6adD4cc40D3aE850EE20a8941",
+        #     # "0xE90C0c4Aae378aa9bB8ff74f3636D1DdA484105a",
+        #     # "0xCB456ADaE87589539c5c4Bb67BFF7696B4933b0E",
+        #     # "0x78Ab96f92858D59A946D0B442Fb97d88833e1442",
+        #     # "0x9eF6d86fb32e4d656579fe645F0E09D20C30A788",
+        #     # "0x2491e32Db833007bFc50b5e73347bf8343C406cD",
+        #     # "0x76493C787F6b6E8acfa719ea26130E7671a34307",
+        # ]
 
         # t1_addresses = [t1_addresses[0]]
         # t1_addresses = ["0x029e40e8d0c181BA7445B2c27060386e45A63F85"]
@@ -268,7 +280,8 @@ class HTSCompensationProcessor:
                 )
 
             # Save cache every 10 addresses
-            if i % 10 == 0:
+            # if i % 10 == 0:
+            if i % 5 == 0:
                 self.save_cache()
                 self.print_progress_summary()
 
@@ -298,7 +311,8 @@ class HTSCompensationProcessor:
         print(f"\n{'='*60}")
         print("FINAL HTS COMPENSATION SUMMARY")
         print(f"{'='*60}")
-        print(f"Total addresses processed: {stats['successful']}")
+        print(f"Total addresses: {stats['total_addresses']}")
+        print(f"Total addresses successfull: {stats['successful']}")
         print(f"Addresses with errors: {stats['errors']}")
         print(
             f"Total compensation amount: ${self.results_cache['total_compensation']:.2f}"
@@ -311,20 +325,25 @@ class HTSCompensationProcessor:
         successful_addresses = [
             data
             for data in self.results_cache["processed_addresses"].values()
-            if data.get("error") is None and data.get("compensation_amount_usd", 0) > 0
+            # if data.get("error") is None and data.get("compensation_amount_usd", 0) > 0
         ]
 
         if successful_addresses:
             top_compensations = sorted(
                 successful_addresses,
-                key=lambda x: x.get("compensation_amount_usd", 0),
+                key=lambda x: x.get("final_balance", 0),
+                # key=lambda x: x.get("compensation_amount_usd", 0),
                 reverse=True,
-            )[:50]
+            )
+            # )[:50]
 
-            print(f"\nTop 10 compensations:")
+            print(f"\nAll compensations:")
             for i, addr_data in enumerate(top_compensations, 1):
+                # print(
+                #     f"{i:2d}. {addr_data['address']}: ${addr_data['compensation_amount_usd']:.2f}"
+                # )
                 print(
-                    f"{i:2d}. {addr_data['address']}: ${addr_data['compensation_amount_usd']:.2f}"
+                    f"{i:2d}. {addr_data['address']}: ${addr_data['final_balance']:.2f}"
                 )
 
     def export_results(self, filename: str = None):
