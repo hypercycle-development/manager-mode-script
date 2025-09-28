@@ -447,19 +447,19 @@ class LicenseUptimeCalculator:
             message_changes = license_data.get("shareToken", {}).get(
                 "messageChanged", []
             )
-            if message_changes:
-                # first_message_time = int(message_changes[0]["blockTimestamp"])
-                # print(f"First message timestamp: {first_message_time} ({time.ctime(first_message_time)})")
+            # if message_changes:
+            #     # first_message_time = int(message_changes[0]["blockTimestamp"])
+            #     # print(f"First message timestamp: {first_message_time} ({time.ctime(first_message_time)})")
                 
-                last_message_time = int(
-                    message_changes[len(message_changes) - 1]["blockTimestamp"]
-                )
-                print(
-                    f"Last message timestamp: {last_message_time} ({time.ctime(last_message_time)})"
-                )
-            else:
-                print("No message changes found for this license")
-            # print("No message will be handled")
+            #     last_message_time = int(
+            #         message_changes[len(message_changes) - 1]["blockTimestamp"]
+            #     )
+            #     print(
+            #         f"Last message timestamp: {last_message_time} ({time.ctime(last_message_time)})"
+            #     )
+            # else:
+            #     print("No message changes found for this license")
+            print("No message will be handled")
 
             # Get uptime report with custom start time
             try:
