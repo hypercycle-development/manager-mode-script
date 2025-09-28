@@ -45,9 +45,9 @@ def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER)
             orderBy: licenseId
             where: {{
                 or: [
-                    {{ rTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status_not: ENDED }}
-                    {{ wTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status_not: ENDED }}
-                    {{ operator: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED", status_not: ENDED }}
+                    {{ rTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status: STARTED }}
+                    {{ wTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status: STARTED }}
+                    {{ operator: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED", status: STARTED }}
                 ]
             }}
             block: {{ number: {BLOCK_NUMBER} }}
