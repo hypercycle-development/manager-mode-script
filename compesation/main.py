@@ -243,6 +243,7 @@ class HTSCompensationProcessor:
 
         # t1_addresses = [t1_addresses[0]]
         # t1_addresses = ["0x029e40e8d0c181BA7445B2c27060386e45A63F85"]
+        # t1_addresses = ["0x7f5B0C324EbA0D2Af713B06c960b332DD5e03621"]
 
         self.results_cache["processing_stats"]["total_addresses"] = len(t1_addresses)
 
@@ -278,6 +279,8 @@ class HTSCompensationProcessor:
                     license_count=result["license_count"],
                     processing_time=result["processing_time"],
                 )
+            else:
+                raise Exception(f"Failed in some point: {result}")
 
             # Save cache every 10 addresses
             # if i % 10 == 0:
