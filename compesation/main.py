@@ -340,7 +340,8 @@ class HTSCompensationProcessor:
             )
             # )[:50]
 
-            print(f"\nAll compensations:")
+            # print(f"\nAll compensations:")
+            print(f"\nAll final balances:")
             for i, addr_data in enumerate(top_compensations, 1):
                 # print(
                 #     f"{i:2d}. {addr_data['address']}: ${addr_data['compensation_amount_usd']:.2f}"
