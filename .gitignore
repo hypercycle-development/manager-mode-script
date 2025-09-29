@@ -12,3 +12,6 @@ venv/
 *.key
 *.pem
 *.secret
+
+/*_cache
+/results
