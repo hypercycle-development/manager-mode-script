@@ -82,6 +82,7 @@ class HTSCompensationProcessor:
         self,
         address: str,
         compensation_amount: float,
+        total_credit_bonus_amount: float,
         total_balance: float,
         final_balance: float,
         error: str = None,
@@ -92,6 +93,7 @@ class HTSCompensationProcessor:
         self.results_cache["processed_addresses"][address.lower()] = {
             "address": address,
             "compensation_amount_usd": compensation_amount,
+            "total_credit_bonus_amount": total_credit_bonus_amount,
             "total_balance_usdc": total_balance,
             "final_balance": round(final_balance, 2),
             "license_count": license_count,
@@ -129,6 +131,9 @@ class HTSCompensationProcessor:
             print(f"\n{'='*60}")
             print(f"Processing address: {address}")
 
+            # Get licenses from subgraph
+            licenses_data = await get_licenses_data(address)
+
             # Get transfer data
             transfer_txs = await get_transfers(address)
             nodes_deposits_txs = transfer_txs["nodes"]
@@ -147,22 +152,22 @@ class HTSCompensationProcessor:
             # print(f"total_balance: {total_balance}")
 
             # New calculated
-            real_end_balances = calculate_end_balance_by_node_real(user_node_data)
+            real_end_balances, total_credit_bonus_amount = calculate_end_balance_by_node_real(
+                user_node_data, licenses_data
+            )
             print(f"real_end_balances: {real_end_balances}")
             total_balance_real = calculate_total_balance_real(
                 real_end_balances, refunds_txs
             )
             print(f"total_balance_real: {total_balance_real}")
 
-            # Get licenses from subgraph
-            licenses_data = await get_licenses_data(address)
-
             if not licenses_data:
                 print(f"No licenses found for {address}")
                 return {
                     "compensation_amount_usd": 0.0,
+                    "total_credit_bonus_amount": total_credit_bonus_amount,
                     "total_balance_usdc": total_balance_real / 1_000_000,
-                    "final_balance": (total_balance_real * 1.5) / 1_000_000,
+                    "final_balance": ((total_balance_real * 1.5) + total_credit_bonus_amount) / 1_000_000,
                     "license_count": 0,
                     "processing_time": time.time() - start_time,
                     "error": None,
@@ -180,12 +185,14 @@ class HTSCompensationProcessor:
                 "compensation_amount_usd": compensation_report[
                     "compensation_amount_usd"
                 ],
+                "total_credit_bonus_amount": total_credit_bonus_amount,
                 "total_balance_usdc": total_balance_real / 1_000_000,
                 # The compensation calculated (using ERC20 with 6 decimals). Mainly because the Node balances comes like that
                 "final_balance": (
                     (
                         total_balance_real * 1.5
                         + compensation_report["compensation_amount_usd"] * 1_000_000
+                        + total_credit_bonus_amount
                     )
                 )
                 / 1_000_000,
@@ -196,7 +203,8 @@ class HTSCompensationProcessor:
             }
 
             print(f"✅ Address {address} processed successfully")
-            print(f"   Compensation: ${result['compensation_amount_usd']:.2f}")
+            print(f"   Compensation: ${result['compensation_amount_usd']:.2f}")            
+            print(f"   Credit bonus (all nodes): ${result['total_credit_bonus_amount']:.2f}")
             print(f"   Balance (all nodes): ${result['total_balance_usdc']:.2f}")
             print(f"   Final balance (to HMS): ${result['final_balance']:.2f}")
             print(f"   Licenses: {result['license_count']}")
@@ -228,17 +236,22 @@ class HTSCompensationProcessor:
         print("Fetching HTS Tranche1 addresses...")
         t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
         # t1_addresses = [
+        #     "0x5E258aff4f59fb5300Dc377C001D361E52a91894",
+        #     "0x891110E8A0b02D006c33DFADf7aed7081b63c8EA",
+        #     "0xcf30Cc6F9D67f21ef8ae5E5271Caf90F3e423ADF",
+        # ]
+        # t1_addresses = [
         #     "0x4da687250556cBD563459E422477dB2b0779A123",
-        #     # "0xa4868fdF30EF3aBa7Ccc2EE0dEEe128fC4f4798B",
-        #     # "0x3fD7Df71ec4482457d80D546Ba6f943302D8181B",
-        #     # "0x2B8604c98b8c4Ae226c92C8375893CE35f7e437C",
-        #     # "0xb7131B4158E597C6adD4cc40D3aE850EE20a8941",
-        #     # "0xE90C0c4Aae378aa9bB8ff74f3636D1DdA484105a",
-        #     # "0xCB456ADaE87589539c5c4Bb67BFF7696B4933b0E",
-        #     # "0x78Ab96f92858D59A946D0B442Fb97d88833e1442",
-        #     # "0x9eF6d86fb32e4d656579fe645F0E09D20C30A788",
-        #     # "0x2491e32Db833007bFc50b5e73347bf8343C406cD",
-        #     # "0x76493C787F6b6E8acfa719ea26130E7671a34307",
+        #     "0xa4868fdF30EF3aBa7Ccc2EE0dEEe128fC4f4798B",
+        #     "0x3fD7Df71ec4482457d80D546Ba6f943302D8181B",
+        #     "0x2B8604c98b8c4Ae226c92C8375893CE35f7e437C",
+        #     "0xb7131B4158E597C6adD4cc40D3aE850EE20a8941",
+        #     "0xE90C0c4Aae378aa9bB8ff74f3636D1DdA484105a",
+        #     "0xCB456ADaE87589539c5c4Bb67BFF7696B4933b0E",
+        #     "0x78Ab96f92858D59A946D0B442Fb97d88833e1442",
+        #     "0x9eF6d86fb32e4d656579fe645F0E09D20C30A788",
+        #     "0x2491e32Db833007bFc50b5e73347bf8343C406cD",
+        #     "0x76493C787F6b6E8acfa719ea26130E7671a34307",
         # ]
 
         # t1_addresses = [t1_addresses[0]]
@@ -273,6 +286,7 @@ class HTSCompensationProcessor:
                 self.add_address_result(
                     address=address,
                     compensation_amount=result["compensation_amount_usd"],
+                    total_credit_bonus_amount= result["total_credit_bonus_amount"],
                     total_balance=result["total_balance_usdc"],
                     final_balance=result["final_balance"],
                     error=result["error"],
@@ -361,6 +375,7 @@ class HTSCompensationProcessor:
             fieldnames = [
                 "address",
                 "compensation_amount_usd",
+                "total_credit_bonus_amount",
                 "total_balance_usdc",
                 "final_balance",
                 "license_count",

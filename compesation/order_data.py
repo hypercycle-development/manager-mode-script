@@ -8,6 +8,7 @@ from app_types import (
     UserNodeData,
     Interaction,
 )
+from subgraph import ProposalData
 from urllib.parse import urlparse, parse_qs
 
 
@@ -22,9 +23,12 @@ def get_remaining_as_usdc(
 
 
 def calculate_end_balance_by_node_real(
-    data: Dict[str, UserNodeData],
-) -> Dict[str, EndBalanceResponse]:
+    data: Dict[str, UserNodeData], licenses: List[ProposalData]
+) -> Tuple[Dict[str, EndBalanceResponse], int]:
     result = {}
+    max_license = len(licenses)
+    creations_count = 0
+    total_credit_amount = 0
 
     for node_name, user_data in data.items():
         # Open a new entry for this node
@@ -34,11 +38,45 @@ def calculate_end_balance_by_node_real(
         }
 
         for unregistered_deposit in user_data.get("unregistered_deposits", []):
-            result[node_name][
-                unregistered_deposit["tokenSymbol"]
-            ] += int(unregistered_deposit["value"])
+            result[node_name][unregistered_deposit["tokenSymbol"]] += int(
+                unregistered_deposit["value"]
+            )
 
-    return result
+        interactions = sorted(
+            user_data.get("user_interactions", []),
+            key=lambda x: x.get("cost", [{}])[0].get("used", 0) if x.get("cost") else 0,
+        )
+
+        for interaction in interactions:
+            if creations_count == max_license:
+                break
+
+            if "/create" in interaction["uri"] and interaction["status_code"] == 200:
+                # Check if cost exists and has data (safe check)
+                if not interaction.get("cost") or len(interaction["cost"]) == 0:
+                    continue
+
+                # Gettting the USD value
+                usdc_cost = interaction["cost"][0]["used"]
+                bonus_credit_amount = 0
+
+                if usdc_cost >= 120000000:
+                    print("Bonus 120$")
+                    bonus_credit_amount = 120000000
+                elif usdc_cost >= 90000000:
+                    print("Bonus 60$")
+                    bonus_credit_amount = 60000000
+                elif usdc_cost >= 60000000:
+                    print("Bonus 30$")
+                    bonus_credit_amount = 30000000
+
+                # Add the bonus to the nodes credit
+                if bonus_credit_amount > 0:
+                    total_credit_amount += bonus_credit_amount
+
+            creations_count += 1
+
+    return result, total_credit_amount
 
 
 def calculate_end_balance_per_node(
