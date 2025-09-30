@@ -374,7 +374,7 @@ class HTSCompensationProcessor:
                     f"{i:2d}. {addr_data['address']}: ${addr_data['final_balance']:.2f}"
                 )
 
-    def export_results(self, filename: str = None):
+    def export_results(self, filename: Union[str, None] = None):
         """Export results to a CSV file"""
         if filename is None:
             filename = f"hts_compensation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
