@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from aiohttp import ClientSession, ClientError, ServerTimeoutError
 from common import HTS_NODES
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Union
 from datetime import datetime
 
 
@@ -32,7 +32,6 @@ class TillerMessageCache:
 
     def _get_cache_key(self, node_url: str, number: int) -> str:
         """Generate cache key from node URL and number."""
-        # Clean node_url to make it filesystem-safe
         node_key = (
             node_url.replace("http://", "")
             .replace("https://", "")
@@ -41,34 +40,40 @@ class TillerMessageCache:
         )
         return f"{node_key}__{number}.json"
 
-    def get(self, node_url: str, number: int) -> Optional[str]:
-        """Get cached public key if available."""
+    def get(self, node_url: str, number: int) -> Optional[dict]:
+        """Get cached result if available. Returns dict with 'public_key' or 'status'."""
         cache_file = self.cache_dir / self._get_cache_key(node_url, number)
 
         if cache_file.exists():
             try:
                 with open(cache_file, "r") as f:
-                    data = json.load(f)
-                return data.get("public_key")
+                    return json.load(f)
             except Exception:
-
                 return None
         return None
 
-    def set(self, node_url: str, number: int, public_key: str):
-        """Cache a public key."""
+    def set(
+        self,
+        node_url: str,
+        number: int,
+        public_key: Union[str, None] = None,
+        status: Union[str, None] = None,
+    ):
+        """Cache a result - either a public key or a status (like 'invalid')."""
         cache_file = self.cache_dir / self._get_cache_key(node_url, number)
 
         try:
-            with open(cache_file, "w") as f:
-                json.dump(
-                    {"public_key": public_key, "cached_at": datetime.now().isoformat()},
-                    f,
-                )
-        except Exception as e:
-            import traceback
+            cache_data = {"cached_at": datetime.now().isoformat()}
 
-            traceback.print_exc()
+            if public_key:
+                cache_data["public_key"] = public_key
+                cache_data["status"] = "success"
+            elif status:
+                cache_data["status"] = status
+
+            with open(cache_file, "w") as f:
+                json.dump(cache_data, f)
+        except Exception as e:
             print(f"Warning: Failed to cache message {number}: {e}")
 
 
@@ -185,25 +190,29 @@ async def fetch_public_keys_batch(
     public_keys = []
     cached_count = 0
     fetched_count = 0
+    skipped_invalid = 0
 
     for batch_start in range(0, total, batch_size):
         batch_end = min(batch_start + batch_size, total)
         batch_numbers = range(batch_start + 1, batch_end + 1)
 
-        # Check cache first and prepare fetch tasks
         tasks = []
         for number in batch_numbers:
             if use_cache:
-                cached_pk = message_cache.get(node_url, number)
-                if cached_pk:
-                    public_keys.append(cached_pk)
-                    cached_count += 1
-                    continue  # Skip to next number
+                cached_result = message_cache.get(node_url, number)
+                if cached_result:
+                    status = cached_result.get("status")
+                    if status == "success":
+                        public_keys.append(cached_result["public_key"])
+                        cached_count += 1
+                        continue
+                    elif status == "invalid":
+                        # Skip invalid numbers permanently
+                        skipped_invalid += 1
+                        continue
 
-            # Not in cache, need to fetch
             tasks.append(get_tiller_message(node_url, number, session, message_cache))
 
-        # Fetch uncached messages
         if tasks:
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -213,7 +222,7 @@ async def fetch_public_keys_batch(
                     fetched_count += 1
 
         print(
-            f"  Progress: {batch_end}/{total} (cached: {cached_count}, fetched: {fetched_count})",
+            f"  Progress: {batch_end}/{total} (cached: {cached_count}, fetched: {fetched_count}, invalid: {skipped_invalid})",
             end="\r",
         )
 
@@ -221,7 +230,7 @@ async def fetch_public_keys_batch(
             await asyncio.sleep(0.3)
 
     print(
-        f"  Progress: {total}/{total} (cached: {cached_count}, fetched: {fetched_count}) ✓"
+        f"  Progress: {total}/{total} (cached: {cached_count}, fetched: {fetched_count}, invalid: {skipped_invalid}) ✓"
     )
     return public_keys
 
@@ -241,34 +250,25 @@ async def get_tiller_message(
             data = await response.json()
 
             message: str = data.get("message", "")
-            if not message:
-                print(f"    Warning: Empty message for number {number}")
-                return None
 
-            if message == "invalid number":
-                print(f"    Error: Invalid number: {number} -  Probably not allocated")
+            if not message or message == "invalid number":
+                # Cache as invalid so we don't retry
+                message_cache.set(node_url, number, status="invalid")
                 return None
 
             _, public_key, _, _, _, _, _ = decode_message(message)
 
             if not public_key:
-                print(f"    Warning: No public key extracted for number {number}")
                 return None
 
-            # Cache the result
-            message_cache.set(node_url, number, public_key)
-
+            # Cache the successful result
+            message_cache.set(node_url, number, public_key=public_key)
             return public_key
 
-    except ServerTimeoutError as e:
-        print(f"    Error fetching number {number} - ServerTimeoutError: {e}")
-
-    except ClientError as e:
-        print(f"    Error fetching number {number} - ClientError: {e}")
-
+    except (ServerTimeoutError, ClientError) as e:
+        # Don't cache timeouts/network errors - they might work next time
+        print(f"    Transient error for {number}: {e}")
+        return None
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        print(f"    Error fetching number {number}: {e}")
-    return None
+        print(f"    Error fetching {number}: {e}")
+        return None
