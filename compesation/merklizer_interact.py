@@ -1,13 +1,11 @@
-from common import MAX_TIMESTAMP_UTC, MERKLIZER_URL, seconds_to_months
 import requests
 import time
-from typing import Dict, List, Optional, Tuple
-
-import time
-from typing import Dict, List, Optional, Tuple
 import json
 import os
 from pathlib import Path
+from common import MAX_TIMESTAMP_UTC, MERKLIZER_URL, seconds_to_months
+from typing import Dict, List, Optional, Union
+from subgraph import ProposalData
 
 
 class LicenseUptimeCalculator:
@@ -166,7 +164,7 @@ class LicenseUptimeCalculator:
         self,
         updates: List[Dict],
         start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        end_time: Optional[Union[int, float]] = None,
         custom_start_time: Optional[int] = None,
     ) -> Dict:
         if not updates:
@@ -414,7 +412,7 @@ class LicenseUptimeCalculator:
         }
 
     def calculate_hts_compensation(
-        self, licenses_data: List[Dict], wallet_address: str = None
+        self, licenses_data: List[ProposalData], wallet_address: str
     ) -> Dict:
         """
         Calculate HTS compensation for a wallet based on all its licenses.
@@ -427,8 +425,7 @@ class LicenseUptimeCalculator:
             Dictionary with compensation details
         """
         print(f"\n=== CALCULATING HTS COMPENSATION ===")
-        if wallet_address:
-            print(f"Wallet: {wallet_address}")
+        print(f"Wallet: {wallet_address}")
         print(f"Processing {len(licenses_data)} licenses...")
 
         total_wallet_downtime_seconds = 0
