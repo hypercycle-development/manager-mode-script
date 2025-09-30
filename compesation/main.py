@@ -54,6 +54,7 @@ class HTSCompensationProcessor:
         return {
             "processed_addresses": {},
             "total_compensation": 0.0,
+            "total_creadit_bonus": 0.0,
             "total_balance_to_hms": 0.0,
             "last_updated": None,
             "processing_stats": {
@@ -85,7 +86,7 @@ class HTSCompensationProcessor:
         total_credit_bonus_amount: float,
         total_balance: float,
         final_balance: float,
-        error: str = None,
+        error: Union[str, None] = None,
         license_count: int = 0,
         processing_time: float = 0,
     ):
@@ -116,12 +117,15 @@ class HTSCompensationProcessor:
         """Recalculate total compensation from all successful entries"""
         total = 0.0
         total_hms = 0.0
+        total_credit_bonus = 0.0
         for addr_data in self.results_cache["processed_addresses"].values():
             if addr_data.get("error") is None:
                 total += addr_data.get("compensation_amount_usd", 0)
                 total_hms += addr_data.get("final_balance", 0)
+                total_credit_bonus += addr_data.get("total_credit_bonus_amount", 0)
         self.results_cache["total_compensation"] = total
         self.results_cache["total_balance_to_hms"] = total_hms
+        self.results_cache["total_creadit_bonus"] = total_credit_bonus
 
     async def process_address(self, address: str) -> Union[Dict, None]:
         """Process a single address and return compensation data"""
@@ -165,7 +169,7 @@ class HTSCompensationProcessor:
                 print(f"No licenses found for {address}")
                 return {
                     "compensation_amount_usd": 0.0,
-                    "total_credit_bonus_amount": total_credit_bonus_amount,
+                    "total_credit_bonus_amount": total_credit_bonus_amount / 1_000_000,
                     "total_balance_usdc": total_balance_real / 1_000_000,
                     "final_balance": ((total_balance_real * 1.5) + total_credit_bonus_amount) / 1_000_000,
                     "license_count": 0,
@@ -185,7 +189,7 @@ class HTSCompensationProcessor:
                 "compensation_amount_usd": compensation_report[
                     "compensation_amount_usd"
                 ],
-                "total_credit_bonus_amount": total_credit_bonus_amount,
+                "total_credit_bonus_amount": total_credit_bonus_amount / 1_000_000,
                 "total_balance_usdc": total_balance_real / 1_000_000,
                 # The compensation calculated (using ERC20 with 6 decimals). Mainly because the Node balances comes like that
                 "final_balance": (
@@ -318,6 +322,9 @@ class HTSCompensationProcessor:
             f"Current total compensation: ${self.results_cache['total_compensation']:.2f}"
         )
         print(
+            f"Current bonus credit: ${self.results_cache['total_creadit_bonus']:.2f}"
+        )
+        print(
             f"Current total to HMS: ${self.results_cache['total_balance_to_hms']:.2f}"
         )
 
@@ -335,7 +342,10 @@ class HTSCompensationProcessor:
             f"Total compensation amount: ${self.results_cache['total_compensation']:.2f}"
         )
         print(
-            f"Current total to HMS: ${self.results_cache['total_balance_to_hms']:.2f}"
+            f"Total bonus credit: ${self.results_cache['total_creadit_bonus']:.2f}"
+        )
+        print(
+            f"Final total balance to HMS: ${self.results_cache['total_balance_to_hms']:.2f}"
         )
 
         # Top compensations
