@@ -32,9 +32,10 @@ def calculate_end_balance_by_node_real(
 
     for node_name, user_data in data.items():
         # Open a new entry for this node
+        user_balance = user_data.get("user_balance") or {}
         result[node_name] = {
-            "HyPC": user_data.get("user_balance", {}).get("HyPC", 0),
-            "USDC": user_data.get("user_balance", {}).get("USDC", 0),
+            "HyPC": user_balance.get("HyPC", 0),
+            "USDC": user_balance.get("USDC", 0),
         }
 
         for unregistered_deposit in user_data.get("unregistered_deposits", []):
