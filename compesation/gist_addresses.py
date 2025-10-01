@@ -28,7 +28,7 @@ async def get_tranche1_hms_addresses() -> list[str]:
     """
     Get Tranche 1 addresses from local cache or fetch from gist.
     """
-    cache_file = "user_addresses_t1_cache/hms_tranche1_addresses.json"
+    cache_file = "user_addresses_t1/hms_tranche1_addresses.json"
 
     # Try to load from local file
     try:
