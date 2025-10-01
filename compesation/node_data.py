@@ -116,6 +116,7 @@ async def get_all_hts_public_keys(use_cache: bool = True) -> List[str]:
         node_url = node_data["url"]
 
         try:
+            # public_keys = await fetch_message_from_tiller( node_url, node_name, message_cache, use_cache)
             public_keys = await fetch_node_tillers(
                 node_url, node_name, message_cache, use_cache
             )
@@ -157,7 +158,7 @@ async def fetch_node_tillers(
     list_url = f"{node_url}/aim/0/list"
 
     async with ClientSession() as session:
-        async with session.get(list_url, timeout=900) as response:
+        async with session.get(list_url, timeout=60) as response:
             response.raise_for_status()
             data = await response.json()
 
@@ -174,6 +175,45 @@ async def fetch_node_tillers(
             public_keys = await fetch_public_keys_batch(
                 node_url, total, session, message_cache, use_cache, batch_size=5
             )
+
+            return public_keys
+
+
+async def fetch_message_from_tiller(
+    node_url: str, node_name: str, message_cache: TillerMessageCache, use_cache: bool
+) -> List[str]:
+    """Fetch all tiller public keys from a single node."""
+    list_url = f"{node_url}/aim/0/list"
+
+    async with ClientSession() as session:
+        async with session.get(list_url, timeout=900) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+            available: int = data.get("available", 0)
+            tillers = data.get("tillers", [])
+            tillers_len = len(tillers)
+            total = available + tillers_len
+
+            print(f"  Total tillers: {total}")
+
+            public_keys = []
+            if total == 0:
+                return public_keys
+
+            for tiller in tillers:
+                number: int | None = tiller.get("number")
+                message: str | None = tiller.get("message")
+
+                if not number or not message:
+                    continue
+
+                _, public_key, _, _, _, _, _ = decode_message(message)
+
+                if public_key:
+                    # Cache the successful result
+                    message_cache.set(node_url, number, public_key=public_key)
+                    public_keys.append(public_key)
 
             return public_keys
 
@@ -245,7 +285,7 @@ async def get_tiller_message(
     url = f"{node_url}/aim/0/get_message?is_share=1&license=0&chypc=0&number={number}"
 
     try:
-        async with session.get(url, timeout=900) as response:
+        async with session.get(url, timeout=5) as response:
             response.raise_for_status()
             data = await response.json()
 
