@@ -46,6 +46,7 @@ def calculate_end_balance_by_node_real(
         interactions = sorted(
             user_data.get("user_interactions", []),
             key=lambda x: x.get("cost", [{}])[0].get("used", 0) if x.get("cost") else 0,
+            reverse=True,
         )
 
         for interaction in interactions:
@@ -75,7 +76,8 @@ def calculate_end_balance_by_node_real(
                 if bonus_credit_amount > 0:
                     total_credit_amount += bonus_credit_amount
 
-            creations_count += 1
+                # Add tiller creation counts
+                creations_count += 1
 
     return result, total_credit_amount
 
