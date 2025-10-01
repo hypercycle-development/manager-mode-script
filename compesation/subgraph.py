@@ -124,3 +124,63 @@ async def get_licenses_data(
             print(f"Error saving user licenses cache for {user_address}: {e}")
 
         return results
+
+
+async def get_license(
+    license_id: str, cache_dir: str = "single_license_cache"
+) -> Optional[ProposalData]:
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+
+    cache_file = os.path.join(cache_dir, f"{license_id}.json")
+
+    # Check if cached data exists
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+            print(f"Loaded cached license data for {license_id}")
+            return cached_data
+        except Exception as e:
+            print(f"Error loading cache for license {license_id}: {e}")
+            print("Fetching fresh data...")
+
+    query = f"""
+    {{
+        shareProposalDatas(
+            first: 1
+            where: {{
+                licenseId: "{license_id}", operatorString_not: "TO_BE_REPLACED", status: STARTED
+            }}
+        ) {{
+            licenseOwner
+            licenseLevel
+        }}
+    }}
+    """
+
+    async with ClientSession() as session:
+        res = await query_subgraph(
+            session,
+            SUBGRAPHS["mainnet"]["ethereum"],
+            query,
+        )
+
+        if not res or res.get("data", None) is None:
+            raise RuntimeError("Not valid subgrah response")
+
+        response: List[ProposalData] = res["data"]["shareProposalDatas"]
+        results: Optional[ProposalData] = None
+
+        if response and len(response) == 1:
+            results = response[0]
+
+        # Save to cache
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(results, f, indent=2)
+            print(f"Cached license data for {license_id}")
+        except Exception as e:
+            print(f"Error saving license cache for {license_id}: {e}")
+
+        return results
