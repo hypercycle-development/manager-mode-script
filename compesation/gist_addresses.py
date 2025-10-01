@@ -33,12 +33,12 @@ async def get_tranche1_hms_addresses() -> list[str]:
     # Try to load from local file
     try:
         with open(cache_file, "r") as f:
-            data = json.load(f)
-            addresses = data.get("addresses", [])
-            if addresses:
-                print(f"Loaded {len(addresses)} addresses from local cache")
-                return addresses
-            raise ValueError("No addresses found in local cache")
+            addresses = json.load(f)
+            # addresses = data.get("addresses", [])
+            # if addresses:
+            print(f"Loaded {len(addresses)} addresses from local cache")
+            return addresses
+            # raise ValueError("No addresses found in local cache")
     except Exception as e:
         print(f"Error loading local file of hms addresses")
         raise e
