@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, List, Union
 from web3 import Web3
 from web3.exceptions import BlockNotFound, TransactionNotFound
-from gist_addresses import fetch_gist_addresses
+from gist_addresses import fetch_gist_addresses, get_tranche1_hms_addresses
 from user_deposits import get_transfers, get_user_node_data
 from order_data import (
     calculate_end_balance_per_node,
@@ -264,7 +264,8 @@ class HTSCompensationProcessor:
 
         # Get all addresses
         print("Fetching HTS Tranche1 addresses...")
-        t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
+        # t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
+        t1_addresses = await get_tranche1_hms_addresses()
         # t1_addresses = [
         #     "0x5E258aff4f59fb5300Dc377C001D361E52a91894",
         #     # "0x891110E8A0b02D006c33DFADf7aed7081b63c8EA",
