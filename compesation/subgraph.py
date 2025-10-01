@@ -12,12 +12,12 @@ from pathlib import Path
 # Subgraph endpoints
 SUBGRAPHS = {
     "mainnet": {
-        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum/v0.7.34",
-        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base/v0.7.34",
+        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum/v0.7.35",
+        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base/v0.7.35",
     },
     "testnet": {
-        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum-sepolia/v0.7.34",
-        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base-sepolia/v0.7.34",
+        "ethereum": "https://api.studio.thegraph.com/query/90034/hypercycle-ethereum-sepolia/v0.7.35",
+        "base": "https://api.studio.thegraph.com/query/90034/hypercycle-base-sepolia/v0.7.35",
     },
 }
 
@@ -38,17 +38,20 @@ async def query_subgraph(
 
 def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER) -> str:
     """Generate the GraphQL query"""
+    # where: {{
+    #     or: [
+    #         {{ rTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status: STARTED }}
+    #         {{ wTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status: STARTED }}
+    #         {{ operator: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED", status: STARTED }}
+    #     ]
+    # }}
     return f"""
     {{
         shareProposalDatas(
             first: 1000
             orderBy: licenseId
             where: {{
-                or: [
-                    {{ rTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status: STARTED }}
-                    {{ wTokenHolders_: {{ holder: "{ADDRESS}", amount_gt: 0 }}, operatorString_not: "TO_BE_REPLACED", status: STARTED }}
-                    {{ operator: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED", status: STARTED }}
-                ]
+                licenseOwner: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED"
             }}
             block: {{ number: {BLOCK_NUMBER} }}
         ) {{
@@ -60,6 +63,8 @@ def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER)
             wTokenId
             operator
             operatorString
+            licenseLevel
+            licenseOwner
             shareToken {{
                     shareMessage
                     messageChanged (orderBy: blockTimestamp, orderDirection: asc) {{
