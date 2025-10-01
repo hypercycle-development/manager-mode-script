@@ -15,7 +15,7 @@ from order_data import (
     calculate_total_balance_real,
     get_data_from_interactions,
 )
-from subgraph import get_licenses_data
+from subgraph import get_licenses_data, ProposalData
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id, MAX_TIMESTAMP_UTC
 from app_types import (
     DepositResponse,
@@ -25,6 +25,27 @@ from app_types import (
     Interaction,
 )
 from merklizer_interact import LicenseUptimeCalculator
+from node_data import get_all_hts_public_keys
+
+def check_licenses(
+    address: str, licenses_data: List[ProposalData]
+) -> List[ProposalData]:
+    licenses: List[ProposalData] = []
+
+    for license in licenses_data:
+        end = False
+        messages = license["shareToken"]["messageChanged"]
+
+        for message in messages:
+            if address.lower() in message["newMessage"].lower():
+                licenses.append(license)
+                end = True
+                break
+
+        if end:
+            break
+
+    return licenses
 
 
 class HTSCompensationProcessor:
@@ -138,6 +159,9 @@ class HTSCompensationProcessor:
             # Get licenses from subgraph
             licenses_data = await get_licenses_data(address)
 
+            # filtered_licenses = check_licenses(address, licenses_data)
+            # print(f"filtered_licenses LENGTH: {len(filtered_licenses)}")
+
             # Get transfer data
             transfer_txs = await get_transfers(address)
             nodes_deposits_txs = transfer_txs["nodes"]
@@ -207,8 +231,10 @@ class HTSCompensationProcessor:
             }
 
             print(f"✅ Address {address} processed successfully")
-            print(f"   Compensation: ${result['compensation_amount_usd']:.2f}")            
-            print(f"   Credit bonus (all nodes): ${result['total_credit_bonus_amount']:.2f}")
+            print(f"   Compensation: ${result['compensation_amount_usd']:.2f}")
+            print(
+                f"   Credit bonus (all nodes): ${result['total_credit_bonus_amount']:.2f}"
+            )
             print(f"   Balance (all nodes): ${result['total_balance_usdc']:.2f}")
             print(f"   Final balance (to HMS): ${result['final_balance']:.2f}")
             print(f"   Licenses: {result['license_count']}")
@@ -241,8 +267,8 @@ class HTSCompensationProcessor:
         t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
         # t1_addresses = [
         #     "0x5E258aff4f59fb5300Dc377C001D361E52a91894",
-        #     "0x891110E8A0b02D006c33DFADf7aed7081b63c8EA",
-        #     "0xcf30Cc6F9D67f21ef8ae5E5271Caf90F3e423ADF",
+        #     # "0x891110E8A0b02D006c33DFADf7aed7081b63c8EA",
+        #     # "0xcf30Cc6F9D67f21ef8ae5E5271Caf90F3e423ADF",
         # ]
         # t1_addresses = [
         #     "0x4da687250556cBD563459E422477dB2b0779A123",
@@ -321,9 +347,7 @@ class HTSCompensationProcessor:
         print(
             f"Current total compensation: ${self.results_cache['total_compensation']:.2f}"
         )
-        print(
-            f"Current bonus credit: ${self.results_cache['total_creadit_bonus']:.2f}"
-        )
+        print(f"Current bonus credit: ${self.results_cache['total_creadit_bonus']:.2f}")
         print(
             f"Current total to HMS: ${self.results_cache['total_balance_to_hms']:.2f}"
         )
@@ -341,9 +365,7 @@ class HTSCompensationProcessor:
         print(
             f"Total compensation amount: ${self.results_cache['total_compensation']:.2f}"
         )
-        print(
-            f"Total bonus credit: ${self.results_cache['total_creadit_bonus']:.2f}"
-        )
+        print(f"Total bonus credit: ${self.results_cache['total_creadit_bonus']:.2f}")
         print(
             f"Final total balance to HMS: ${self.results_cache['total_balance_to_hms']:.2f}"
         )
@@ -403,6 +425,9 @@ class HTSCompensationProcessor:
 
 
 async def main():
+    # Only to fetch HTS public keys (commented out to avoid accidental runs)
+    # await get_all_hts_public_keys()
+    
     """Main processing function"""
     processor = HTSCompensationProcessor()
 
