@@ -27,23 +27,43 @@ from app_types import (
 from merklizer_interact import LicenseUptimeCalculator
 from node_data import get_all_hts_public_keys
 
-def check_licenses(
-    address: str, licenses_data: List[ProposalData]
-) -> List[ProposalData]:
+
+def check_public_key_in_message_optimized(
+    message, json_file_path="node_hts_tiller_cache/all_public_keys.json"
+):
+    """
+    Optimized version using any() for early termination.
+    """
+    try:
+        with open(json_file_path, "r") as file:
+            data = json.load(file)
+
+        public_keys = data.get("public_keys", [])
+
+        # Using any() with generator expression for early termination
+        return any(public_key in message for public_key in public_keys)
+
+    except FileNotFoundError:
+        print(f"Error: File {json_file_path} not found")
+        return False
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON in {json_file_path}")
+        return False
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+
+def check_licenses(licenses_data: List[ProposalData]) -> List[ProposalData]:
     licenses: List[ProposalData] = []
 
     for license in licenses_data:
-        end = False
         messages = license["shareToken"]["messageChanged"]
 
-        for message in messages:
-            if address.lower() in message["newMessage"].lower():
-                licenses.append(license)
-                end = True
-                break
+        message = messages[0]["newMessage"]
 
-        if end:
-            break
+        if check_public_key_in_message_optimized(message):
+            licenses.append(license)
 
     return licenses
 
@@ -159,7 +179,7 @@ class HTSCompensationProcessor:
             # Get licenses from subgraph
             licenses_data = await get_licenses_data(address)
 
-            # filtered_licenses = check_licenses(address, licenses_data)
+            licenses_data = check_licenses(licenses_data)
             # print(f"filtered_licenses LENGTH: {len(filtered_licenses)}")
 
             # Get transfer data
@@ -180,8 +200,8 @@ class HTSCompensationProcessor:
             # print(f"total_balance: {total_balance}")
 
             # New calculated
-            real_end_balances, total_credit_bonus_amount = calculate_end_balance_by_node_real(
-                user_node_data, licenses_data
+            real_end_balances, total_credit_bonus_amount = (
+                calculate_end_balance_by_node_real(user_node_data, licenses_data)
             )
             print(f"real_end_balances: {real_end_balances}")
             total_balance_real = calculate_total_balance_real(
@@ -195,7 +215,10 @@ class HTSCompensationProcessor:
                     "compensation_amount_usd": 0.0,
                     "total_credit_bonus_amount": total_credit_bonus_amount / 1_000_000,
                     "total_balance_usdc": total_balance_real / 1_000_000,
-                    "final_balance": ((total_balance_real * 1.5) + total_credit_bonus_amount) / 1_000_000,
+                    "final_balance": (
+                        (total_balance_real * 1.5) + total_credit_bonus_amount
+                    )
+                    / 1_000_000,
                     "license_count": 0,
                     "processing_time": time.time() - start_time,
                     "error": None,
@@ -317,7 +340,7 @@ class HTSCompensationProcessor:
                 self.add_address_result(
                     address=address,
                     compensation_amount=result["compensation_amount_usd"],
-                    total_credit_bonus_amount= result["total_credit_bonus_amount"],
+                    total_credit_bonus_amount=result["total_credit_bonus_amount"],
                     total_balance=result["total_balance_usdc"],
                     final_balance=result["final_balance"],
                     error=result["error"],
@@ -428,7 +451,7 @@ class HTSCompensationProcessor:
 async def main():
     # Only to fetch HTS public keys (commented out to avoid accidental runs)
     # await get_all_hts_public_keys()
-    
+
     """Main processing function"""
     processor = HTSCompensationProcessor()
 
