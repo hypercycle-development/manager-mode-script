@@ -51,7 +51,7 @@ def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER)
             first: 1000
             orderBy: licenseId
             where: {{
-                licenseOwner: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED"
+                licenseOwner: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED", status: STARTED
             }}
             block: {{ number: {BLOCK_NUMBER} }}
         ) {{
