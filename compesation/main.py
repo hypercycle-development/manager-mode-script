@@ -60,10 +60,12 @@ def check_licenses(licenses_data: List[ProposalData]) -> List[ProposalData]:
     for license in licenses_data:
         messages = license["shareToken"]["messageChanged"]
 
-        message = messages[0]["newMessage"]
+        if len(messages) > 0:
+            message = messages[len(messages) - 1]["newMessage"]
 
-        if check_public_key_in_message_optimized(message):
-            licenses.append(license)
+        if message:
+            if check_public_key_in_message_optimized(message):
+                licenses.append(license)
 
     return licenses
 
@@ -288,7 +290,8 @@ class HTSCompensationProcessor:
         # Get all addresses
         print("Fetching HTS Tranche1 addresses...")
         # t1_addresses = await fetch_gist_addresses(tranche1_addresses_gist_id)
-        t1_addresses = await get_tranche1_hms_addresses()
+        # t1_addresses = await get_tranche1_hms_addresses()
+        t1_addresses = ["0x007a1f3821ab1ed0f8e12678b600dc6dce74b8da"]
         # t1_addresses = [
         #     "0x5E258aff4f59fb5300Dc377C001D361E52a91894",
         #     # "0x891110E8A0b02D006c33DFADf7aed7081b63c8EA",
