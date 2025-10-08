@@ -10,6 +10,9 @@ from app_types import (
 )
 from subgraph import ProposalData
 from urllib.parse import urlparse, parse_qs
+from common import MAX_TIMESTAMP_UTC, months_between_dates
+from datetime import datetime, timezone
+from dateutil.relativedelta import relativedelta
 
 
 def get_remaining_as_usdc(
@@ -79,6 +82,18 @@ def calculate_end_balance_by_node_real(
                 # Add tiller creation counts
                 creations_count += 1
 
+                # Calculate consumed time since creation
+                creation_time = interaction["timestamp"]
+                end_time = float(MAX_TIMESTAMP_UTC)
+
+                # Months
+                total_months = months_between_dates(creation_time, end_time)
+
+                # HTS time balance minus the consumed time
+                result[node_name]["USDC"] += max(0, usdc_cost - total_months * 5000000)
+
+    # for license in licenses:
+    # print(f"License ID: {license['licenseId']}, PROPOSAL: {license['proposalId']}")
     return result, total_credit_amount
 
 
