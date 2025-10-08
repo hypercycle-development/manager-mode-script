@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from dateutil.relativedelta import relativedelta
 import time
 
 USDC_CONTRACT_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
@@ -47,10 +48,33 @@ HTS_NODES = {
 }
 
 
-
 def ctime_utc(timestamp):
     """Convert timestamp to human-readable UTC string"""
     return time.asctime(time.gmtime(timestamp))
+
+
+def months_between_dates(init_date, final_date):
+    # Convert timestamps to datetime objects in UTC (timezone-aware)
+    start_date = datetime.fromtimestamp(init_date, tz=timezone.utc)
+    end_date = datetime.fromtimestamp(final_date, tz=timezone.utc)
+
+    # Calculate the difference in months with decimal precision
+    delta = relativedelta(end_date, start_date)
+    whole_months = delta.years * 12 + delta.months
+
+    # Calculate the fractional part based on remaining days
+    # Get the date after adding whole months
+    intermediate_date = start_date + relativedelta(months=whole_months)
+    remaining_days = (end_date - intermediate_date).days
+
+    # Get days in the current month
+    days_in_month = (
+        intermediate_date + relativedelta(months=1) - intermediate_date
+    ).days
+    fractional_month = remaining_days / days_in_month
+
+    return whole_months + fractional_month
+
 
 def seconds_to_months(seconds):
     """
