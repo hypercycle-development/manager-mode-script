@@ -3,7 +3,7 @@ import time
 import json
 import os
 from pathlib import Path
-from common import MAX_TIMESTAMP_UTC, MERKLIZER_URL, seconds_to_months
+from common import MAX_TIMESTAMP_UTC, MERKLIZER_URL, seconds_to_months, ctime_utc
 from typing import Dict, List, Optional, Union
 from subgraph import ProposalData
 
@@ -51,7 +51,7 @@ class LicenseUptimeCalculator:
 
         timestamp_limit = max_timestamp if max_timestamp is not None else float("inf")
         timestamp_str = (
-            f" until {time.ctime(max_timestamp)}" if max_timestamp else " (no limit)"
+            f" until {ctime_utc(max_timestamp)}" if max_timestamp else " (no limit)"
         )
 
         print(f"Fetching uptime data for license {license_number}{timestamp_str}...")
@@ -183,8 +183,8 @@ class LicenseUptimeCalculator:
                     "time_range": {
                         "start": custom_start_time,
                         "end": end_time,
-                        "start_readable": time.ctime(custom_start_time),
-                        "end_readable": time.ctime(end_time),
+                        "start_readable": ctime_utc(custom_start_time),
+                        "end_readable": ctime_utc(end_time),
                     },
                 }
 
@@ -199,8 +199,8 @@ class LicenseUptimeCalculator:
                 "time_range": {
                     "start": 0,
                     "end": 0,
-                    "start_readable": time.ctime(0),
-                    "end_readable": time.ctime(0),
+                    "start_readable": ctime_utc(0),
+                    "end_readable": ctime_utc(0),
                 },
             }
 
@@ -208,10 +208,10 @@ class LicenseUptimeCalculator:
         sorted_updates = sorted(updates, key=lambda x: x.get("ts", 0))
 
         print(
-            f"The updates start[0] ({sorted_updates[0]['ts']}): {time.ctime(sorted_updates[0]['ts'])}"
+            f"The updates start[0] ({sorted_updates[0]['ts']}): {ctime_utc(sorted_updates[0]['ts'])}"
         )
         print(
-            f"The updates start[last] ({sorted_updates[len(sorted_updates)-1]['ts']}): {time.ctime(sorted_updates[len(sorted_updates)-1]['ts'])}"
+            f"The updates start[last] ({sorted_updates[len(sorted_updates)-1]['ts']}): {ctime_utc(sorted_updates[len(sorted_updates)-1]['ts'])}"
         )
 
         # Determine the actual start time for calculations
@@ -258,8 +258,8 @@ class LicenseUptimeCalculator:
                 "time_range": {
                     "start": actual_start_time,
                     "end": end_time,
-                    "start_readable": time.ctime(actual_start_time),
-                    "end_readable": time.ctime(end_time),
+                    "start_readable": ctime_utc(actual_start_time),
+                    "end_readable": ctime_utc(end_time),
                 },
                 "custom_start_used": custom_start_used,
                 "gap_downtime": gap_downtime,
@@ -318,8 +318,8 @@ class LicenseUptimeCalculator:
             "time_range": {
                 "start": actual_start_time,
                 "end": end_time,
-                "start_readable": time.ctime(actual_start_time),
-                "end_readable": time.ctime(end_time),
+                "start_readable": ctime_utc(actual_start_time),
+                "end_readable": ctime_utc(end_time),
             },
             "custom_start_used": custom_start_used,
             "gap_downtime": gap_downtime,
@@ -334,12 +334,12 @@ class LicenseUptimeCalculator:
     ) -> Dict:
 
         timestamp_info = (
-            f" up to {time.ctime(max_timestamp)}"
+            f" up to {ctime_utc(max_timestamp)}"
             if max_timestamp
             else " (all available data)"
         )
         custom_start_info = (
-            f" with custom start {time.ctime(custom_start_time)}"
+            f" with custom start {ctime_utc(custom_start_time)}"
             if custom_start_time
             else ""
         )
@@ -348,10 +348,10 @@ class LicenseUptimeCalculator:
         )
 
         if max_timestamp:
-            print(f"Max timestamp: {max_timestamp} ({time.ctime(max_timestamp)})")
+            print(f"Max timestamp: {max_timestamp} ({ctime_utc(max_timestamp)})")
         if custom_start_time:
             print(
-                f"Custom start time: {custom_start_time} ({time.ctime(custom_start_time)})"
+                f"Custom start time: {custom_start_time} ({ctime_utc(custom_start_time)})"
             )
 
         # Get all uptime data
@@ -446,13 +446,13 @@ class LicenseUptimeCalculator:
             )
             # if message_changes:
             #     # first_message_time = int(message_changes[0]["blockTimestamp"])
-            #     # print(f"First message timestamp: {first_message_time} ({time.ctime(first_message_time)})")
+            #     # print(f"First message timestamp: {first_message_time} ({ctime_utc(first_message_time)})")
                 
             #     last_message_time = int(
             #         message_changes[len(message_changes) - 1]["blockTimestamp"]
             #     )
             #     print(
-            #         f"Last message timestamp: {last_message_time} ({time.ctime(last_message_time)})"
+            #         f"Last message timestamp: {last_message_time} ({ctime_utc(last_message_time)})"
             #     )
             # else:
             #     print("No message changes found for this license")

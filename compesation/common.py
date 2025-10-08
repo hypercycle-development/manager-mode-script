@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import time
 
 USDC_CONTRACT_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 HYPC_CONTRACT_ADDRESS = "0xeA7B7DC089c9a4A916B5a7a37617f59fD54e37E4"
@@ -45,6 +46,11 @@ HTS_NODES = {
     },
 }
 
+
+
+def ctime_utc(timestamp):
+    """Convert timestamp to human-readable UTC string"""
+    return time.asctime(time.gmtime(timestamp))
 
 def seconds_to_months(seconds):
     """
