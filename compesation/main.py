@@ -28,6 +28,9 @@ from app_types import (
 )
 from merklizer_interact import LicenseUptimeCalculator
 from node_data import get_all_hts_public_keys
+import pymongo
+
+merk_db = pymongo.MongoClient("localhost", 27017).merklizer_mainnet
 
 
 def check_public_key_in_message_optimized(
@@ -476,33 +479,17 @@ async def main():
 
 def get_tilling_data(lic):
     def is_entry_hts(entry):
-        if "HTS" in entry.get('data',{}).get("name",""):
+        if entry.get("data") and "HTS" in entry.get('data',{}).get("name",""):
             return True
         return True
+    doc = merk_db.license_data.find_one({"_id": lic})
     data = []
-    skip = 0
-    failures = 0
-    while True:
-      try:
-        url = f"http://18.216.251.149:8003/uptime_report?license={lic}&update_limit=20&update_skip={skip}&use_cache=0"
-        ss = time.time()
-        res = requests.get(url).json()
-        failures = 0
-        updates = res['updates']
-        data.extend(updates)
-        if len(updates) >= 20:
-            skip+=20
-        else:
-            break
-        print(lic, len(data), time.time()-ss, failures)
-        time.sleep(0.5)
-      except:
-        import traceback
-        traceback.print_exc()
-        failures += 1
-        if failures > 100:
-            return
-        time.sleep(20)
+
+    if doc:
+        data.extend(doc['updates'])
+    
+    for doc in merk_db.license_data_updates.find({"_id.lic": lic}):
+        data.extend(doc['updates'])
     data.sort(key=lambda x: x['ts'])
 
     #first timestamp for HTS, HMS:
@@ -516,7 +503,9 @@ def get_tilling_data(lic):
     #handle case of long-lasting last tiller:
     if data:
         data.append({"ts": time.time(), "status": data[-1]['status']})
-
+    valid_hts = []
+    import pdb
+    pdb.set_trace()
     for entry in data:
         if is_entry_hts(entry):
             valid_hts.append(entry)
