@@ -2,6 +2,8 @@ import asyncio
 import time
 import json
 import os
+import sys
+import requests
 from datetime import datetime
 from typing import Dict, List, Union
 from web3 import Web3
@@ -15,7 +17,7 @@ from order_data import (
     calculate_total_balance_real,
     get_data_from_interactions,
 )
-from subgraph import get_licenses_data, ProposalData
+from subgraph import get_licenses_data, get_anfes_data, ProposalData
 from common import USDC_CONTRACT_ADDRESS, tranche1_addresses_gist_id, MAX_TIMESTAMP_UTC
 from app_types import (
     DepositResponse,
@@ -56,10 +58,17 @@ def check_public_key_in_message_optimized(
 
 def check_licenses(licenses_data: List[ProposalData]) -> List[ProposalData]:
     licenses: List[ProposalData] = []
-
+    if "--testing" in sys.argv:
+        print("NOT CHECKING LICENSES WARNING")
+        return licenses_data
+    
+       
     for license in licenses_data:
-        messages = license["shareToken"]["messageChanged"]
 
+        messages = license["shareToken"]["messageChanged"]
+        print("="*60)
+        print(license)
+        print(messages)
         if len(messages) > 0:
             message = messages[len(messages) - 1]["newMessage"]
 
@@ -465,5 +474,194 @@ async def main():
     processor.export_results()
 
 
+def get_tilling_data(lic):
+    def is_entry_hts(entry):
+        if "HTS" in entry.get('data',{}).get("name",""):
+            return True
+        return True
+    data = []
+    skip = 0
+    failures = 0
+    while True:
+      try:
+        url = f"http://18.216.251.149:8003/uptime_report?license={lic}&update_limit=20&update_skip={skip}&use_cache=0"
+        ss = time.time()
+        res = requests.get(url).json()
+        failures = 0
+        updates = res['updates']
+        data.extend(updates)
+        if len(updates) >= 20:
+            skip+=20
+        else:
+            break
+        print(lic, len(data), time.time()-ss, failures)
+        time.sleep(0.5)
+      except:
+        import traceback
+        traceback.print_exc()
+        failures += 1
+        if failures > 100:
+            return
+        time.sleep(20)
+    data.sort(key=lambda x: x['ts'])
+
+    #first timestamp for HTS, HMS:
+    cutoff_ts = 1754031600
+    start_time = 0
+    last_time = 0
+    total_uptime = 0
+    total_downtime = 0
+    breakout = False
+
+    #handle case of long-lasting last tiller:
+    if data:
+        data.append({"ts": time.time(), "status": data[-1]['status']})
+
+    for entry in data:
+        if is_entry_hts(entry):
+            valid_hts.append(entry)
+
+            if entry['ts'] > cutoff_ts:
+                entry['ts'] = cutoff_ts
+                breakout = True
+
+            if start_time == 0:
+                start_time = entry['ts']
+            else:
+                if entry['status'] == "alive":
+                    total_uptime += entry['ts']-last_time
+                else:
+                    total_downtime += entry['ts']-last_time
+           
+        if breakout:
+            break
+        last_time = entry['ts']
+    print(data)
+    import pdb
+    pdb.set_trace()
+      
+
+
+
+
+async def compute_hts_credits(address):
+    print("main2()")
+    start_time = time.time()
+    print(f"\n{'='*60}")
+    print(f"Processing address: {address}")
+
+    #get the license information first:
+    licenses_ethereum = []
+    licenses_base = []
+
+    # Get licenses from subgraph (eth)
+    licenses_data = await get_licenses_data(address, use_cache = False)
+    licenses_data = check_licenses(licenses_data)
+    for entry in licenses_data:
+        licenses_ethereum.append(int(entry['licenseId']))
+    # Get anfes from subgraph (base)
+    anfes_data = await get_anfes_data(address, use_cache = False)
+    licenses_base = [int(x['id'],16) for x in anfes_data]
+
+    # print(f"filtered_licenses LENGTH: {len(filtered_licenses)}")
+    
+    # Get transfer data
+    transfer_txs = await get_transfers(address, use_cache=False)
+    nodes_deposits_txs = transfer_txs["nodes"]
+    refunds_txs = transfer_txs["refunds"]
+
+    # Get node tilling data:
+    lic_tilling = dict()
+    for lic in licenses_ethereum+licenses_base:
+        lic = 70373039145623
+        #get node lic from tilling service
+        lic_tilling[lic] = get_tilling_data(lic)
+
+    import pdb
+    pdb.set_trace()
+
+
+    #now, for each license+anfe, compute the first tilling entry on HTS, and
+    #then compare the uptime/downtime from the first tilling entry to the cutoff time.
+
+
+    # User node data
+    user_node_data = await get_user_node_data(address, nodes_deposits_txs)
+
+    # # Old calculated
+    # calculated_balances = calculate_end_balance_per_node(user_node_data)
+    # print(f"calculated_balances: {calculated_balances}")
+
+    # total_balance = calculate_total_balance(
+    #     user_node_data, calculated_balances, refunds_txs
+    # )
+    # print(f"total_balance: {total_balance}")
+
+    # New calculated
+    real_end_balances, total_credit_bonus_amount = (
+        calculate_end_balance_by_node_real(user_node_data, licenses_data)
+    )
+    print(f"real_end_balances: {real_end_balances}")
+    total_balance_real = calculate_total_balance_real(
+        real_end_balances, refunds_txs
+    )
+    print(f"total_balance_real: {total_balance_real}")
+
+    if not licenses_data:
+        print(f"No licenses found for {address}")
+        return {
+            "compensation_amount_usd": 0.0,
+            "total_credit_bonus_amount": total_credit_bonus_amount / 1_000_000,
+            "total_balance_usdc": total_balance_real / 1_000_000,
+            "final_balance": (
+                (total_balance_real * 1.5) + total_credit_bonus_amount
+            )
+            / 1_000_000,
+            "license_count": 0,
+            "processing_time": time.time() - start_time,
+            "error": None,
+        }
+
+    # Calculate HTS compensation
+    calculator = LicenseUptimeCalculator()
+    compensation_report = calculator.calculate_hts_compensation(
+        licenses_data, address
+    )
+
+    processing_time = time.time() - start_time
+
+    result = {
+        "compensation_amount_usd": compensation_report[
+            "compensation_amount_usd"
+        ],
+        "total_credit_bonus_amount": total_credit_bonus_amount / 1_000_000,
+        "total_balance_usdc": total_balance_real / 1_000_000,
+        # The compensation calculated (using ERC20 with 6 decimals). Mainly because the Node balances comes like that
+        "final_balance": (
+            (
+                total_balance_real * 1.5
+                + compensation_report["compensation_amount_usd"] * 1_000_000
+                + total_credit_bonus_amount
+            )
+        )
+        / 1_000_000,
+        "license_count": len(licenses_data),
+        "processing_time": processing_time,
+        "error": None,
+        "detailed_report": compensation_report,
+    }
+
+    print(f"✅ Address {address} processed successfully")
+    print(f"   Compensation: ${result['compensation_amount_usd']:.2f}")
+    print(
+          f"   Credit bonus (all nodes): ${result['total_credit_bonus_amount']:.2f}"
+    )
+    print(f"   Balance (all nodes): ${result['total_balance_usdc']:.2f}")
+    print(f"   Final balance (to HMS): ${result['final_balance']:.2f}")
+    print(f"   Licenses: {result['license_count']}")
+    print(f"   Time: {processing_time:.1f}s")
+    print(result())
+    return result
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(compute_hts_credits("0xf48CaB1007F389e68cEFFe7778E6dBde14d41745"))

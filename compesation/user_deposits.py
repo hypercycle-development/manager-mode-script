@@ -205,20 +205,19 @@ async def get_all_usdc_transactions(
         while page <= max_pages:
             try:
                 url = (
-                    f"https://api.etherscan.io/api?module=account"
+                    f"https://api.etherscan.io/v2/api?chainid=1&module=account"
                     f"&action=tokentx"
                     f"&address={address}"
                     f"&contractaddress={USDC_CONTRACT_ADDRESS}"
                     f"&page={page}"
                     f"&offset={offset}"
-                    f"endblock={MAX_BLOCK_NUMBER}"
-                    f"&apikey={ETHERSCAN_API_KEY}"
+                    f"&endblock={MAX_BLOCK_NUMBER}"
+                    f"&apikey={ETHERSCAN_API_KEY}"         
                 )
 
                 async with session.get(url, timeout=30) as response:
                     response.raise_for_status()
                     data = await response.json()
-
                     if data.get("status") == "1":
                         transactions = data.get("result", [])
                         if not transactions:
@@ -294,7 +293,7 @@ async def get_all_hypc_transactions(
 
 
 async def get_transfers(
-    user_address: str, cache_dir: str = "transfer_cache"
+    user_address: str, cache_dir: str = "transfer_cache", use_cache: bool = True
 ) -> GetTransferResponse:
     """
     Find all USDC deposits from user_address to any HTS node
@@ -308,7 +307,7 @@ async def get_transfers(
     cache_file = os.path.join(cache_dir, f"{normalized_address}.json")
 
     # Check if cached data exists
-    if os.path.exists(cache_file):
+    if os.path.exists(cache_file) and use_cache:
         try:
             with open(cache_file, "r") as f:
                 cached_data = json.load(f)

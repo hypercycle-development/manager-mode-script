@@ -36,6 +36,86 @@ async def query_subgraph(
         return None
 
 
+def build_query_for_anfes(ADDRESS: str, BLOCK_NUMBER: int=33608527) -> str:
+    """Generate the GraphQL base query"""
+    return f"""{{
+anfetokens(where: {{ 
+    owner: "{ADDRESS}"     
+  }}
+  block: {{number: {BLOCK_NUMBER} }}
+) {{
+    delegatedSigner
+    id
+    owner
+    isBurned
+    isMinted
+    message
+    numAssets
+    assets {{
+      amount
+      anfeId
+      assetId
+      contractAddress
+      id
+      index
+    }}
+  }}
+}}
+    """
+
+
+async def get_anfes_data(
+    user_address: str, cache_dir: str = "anfes_data_cache"
+, use_cache: bool = True) -> List[any]:
+
+    # Create cache directory if it doesn't exist
+    Path(cache_dir).mkdir(exist_ok=True)
+
+    # Normalize address for filename
+    normalized_address = user_address.lower()
+    cache_file = os.path.join(cache_dir, f"{normalized_address}.json")
+
+    # Check if cached data exists
+    if os.path.exists(cache_file) and use_cache:
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+            print(f"Loaded cached licenses data for {user_address}")
+            return cached_data
+        except Exception as e:
+            print(f"Error loading cache for {user_address}: {e}")
+            print("Fetching fresh data...")
+
+    # Fetch fresh data if no cache or cache failed
+    query = build_query_for_anfes(user_address)
+
+    async with ClientSession() as session:
+        res = await query_subgraph(
+            session,
+            SUBGRAPHS["mainnet"]["base"],
+            query,
+        )
+
+        if not res or res.get("data", None) is None:
+            print(res.get("errors"))
+            raise RuntimeError("Not valid subgrah response")
+
+        # Results
+        results = res["data"]["anfetokens"]
+
+        # Save to cache
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(results, f, indent=2)
+            print(f"Cached user anfe data for {user_address}")
+        except Exception as e:
+            print(f"Error saving user anfe cache for {user_address}: {e}")
+
+        return results
+
+
+
+
 def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER) -> str:
     """Generate the GraphQL query"""
     # where: {{
@@ -45,6 +125,39 @@ def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER)
     #         {{ operator: "{ADDRESS}", operatorString_not: "TO_BE_REPLACED", status: STARTED }}
     #     ]
     # }}
+    return f"""
+    {{
+        shareProposalDatas(
+            first: 1000
+            orderBy: licenseId
+            where: {{
+                or: [
+                  {{licenseOwner: "{ADDRESS}", status: STARTED}}, {{operator: "{ADDRESS}", status: STARTED}}
+                ]
+            }}
+        ) {{
+            proposalId
+            shareNumberId
+            chypcId
+            licenseId
+            rTokenId
+            wTokenId
+            operator
+            operatorString
+            licenseLevel
+            licenseOwner
+            shareToken {{
+                    shareMessage
+                    messageChanged (orderBy: blockTimestamp, orderDirection: asc) {{
+                    newMessage
+                    blockTimestamp
+                }}
+            }}
+        }}
+    }}
+    """
+
+    #old query
     return f"""
     {{
         shareProposalDatas(
@@ -79,7 +192,7 @@ def build_query_for_licenses(ADDRESS: str, BLOCK_NUMBER: int = MAX_BLOCK_NUMBER)
 
 async def get_licenses_data(
     user_address: str, cache_dir: str = "licenses_data_cache"
-) -> List[ProposalData]:
+, use_cache: bool = True) -> List[ProposalData]:
 
     # Create cache directory if it doesn't exist
     Path(cache_dir).mkdir(exist_ok=True)
@@ -89,7 +202,7 @@ async def get_licenses_data(
     cache_file = os.path.join(cache_dir, f"{normalized_address}.json")
 
     # Check if cached data exists
-    if os.path.exists(cache_file):
+    if os.path.exists(cache_file) and use_cache:
         try:
             with open(cache_file, "r") as f:
                 cached_data = json.load(f)
@@ -101,6 +214,7 @@ async def get_licenses_data(
 
     # Fetch fresh data if no cache or cache failed
     query = build_query_for_licenses(user_address)
+    print(query)
 
     async with ClientSession() as session:
         res = await query_subgraph(
@@ -110,6 +224,7 @@ async def get_licenses_data(
         )
 
         if not res or res.get("data", None) is None:
+            print(res.get("errors"))
             raise RuntimeError("Not valid subgrah response")
 
         # Results
